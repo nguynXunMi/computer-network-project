@@ -201,7 +201,15 @@ class Response():
             #  TODO: implement the step of fetch the object file
             #        store in the return value of content
             #
-        return len(content), content
+        try:
+            # Open the file in binary mode
+            with open(filepath, "rb") as f:
+                content = f.read()
+            return len(content), content
+        except FileNotFoundError:
+            # Fallback 404 HTML
+            notfound = b"<h1>404 Not Found</h1>"
+            return len(notfound), notfound
 
 
     def build_response_header(self, request):
@@ -218,34 +226,42 @@ class Response():
 
         #Build dynamic headers
         headers = {
-                "Accept": "{}".format(reqhdr.get("Accept", "application/json")),
-                "Accept-Language": "{}".format(reqhdr.get("Accept-Language", "en-US,en;q=0.9")),
-                "Authorization": "{}".format(reqhdr.get("Authorization", "Basic <credentials>")),
-                "Cache-Control": "no-cache",
-                "Content-Type": "{}".format(self.headers['Content-Type']),
-                "Content-Length": "{}".format(len(self._content)),
-#                "Cookie": "{}".format(reqhdr.get("Cookie", "sessionid=xyz789")), #dummy cooki
+            "Accept": "{}".format(reqhdr.get("Accept", "application/json")),
+            "Accept-Language": "{}".format(reqhdr.get("Accept-Language", "en-US,en;q=0.9")),
+            "Authorization": "{}".format(reqhdr.get("Authorization", "Basic <credentials>")),
+            "Cache-Control": "no-cache",
+            "Content-Type": "{}".format(self.headers['Content-Type']),
+            "Content-Length": "{}".format(len(self._content)),
+        #   "Cookie": "{}".format(reqhdr.get("Cookie", "sessionid=xyz789")), #dummy cookie
         #
-        # TODO prepare the request authentication
+        #   TODO prepare the request authentication
         #
-	# self.auth = ...
-                "Date": "{}".format(datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")),
-                "Max-Forward": "10",
-                "Pragma": "no-cache",
-                "Proxy-Authorization": "Basic dXNlcjpwYXNz",  # example base64
-                "Warning": "199 Miscellaneous warning",
-                "User-Agent": "{}".format(reqhdr.get("User-Agent", "Chrome/123.0.0.0")),
-            }
+	    #   self.auth = ...
+            "Date": "{}".format(datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")),
+            "Max-Forward": "10",
+            "Pragma": "no-cache",
+            "Proxy-Authorization": "Basic dXNlcjpwYXNz",  # example base64
+            "Warning": "199 Miscellaneous warning",
+            "User-Agent": "{}".format(reqhdr.get("User-Agent", "Chrome/123.0.0.0")),
+        }
 
         # Header text alignment
-            #
-            #  TODO: implement the header building to create formated
-            #        header from the provied headers
-            #
         #
-        # TODO prepare the request authentication
+        #  TODO: implement the header building to create formated
+        #        header from the provided headers
         #
-	# self.auth = ...
+        #
+        #  TODO prepare the request authentication
+        #
+	    # self.auth = ...
+        self.auth = reqhdr.get("Authorization", None)
+        
+        fmt_header = "HTTP/1.1 200 OK\r\n"
+        for key, value in headers.items():
+            fmt_header += f"{key}: {value}\r\n"
+        fmt_header += "\r\n"  # end of header section
+        
+        self.auth = self.auth or "None"
         return str(fmt_header).encode('utf-8')
 
 
@@ -292,8 +308,29 @@ class Response():
         #
         # TODO: add support objects
         #
-        else:
-            return self.build_notfound()
+        # elif hasattr(self, "body") and isinstance(self.body, str) and self.body.startswith("HTTP/1.1"):
+        #     return self.body.encode("utf-8")
+        # else:
+        #     return self.build_notfound()
+
+        if path == "/" or path == "/index.html":
+            cookie_header = request.headers.get("Cookie", "")
+            print(f"[DEBUG] Checking cookie for access control: {cookie_header}")
+            if "auth=true" not in cookie_header:
+                print("[DEBUG] Missing or invalid cookie — unauthorized access")
+                # Return a 401 Unauthorized response
+                unauthorized_content = (
+                    b"<html><body><h1>401 Unauthorized</h1><p>You must log in first.</p></body></html>"
+                )
+                self._content = unauthorized_content
+                self.headers["Content-Type"] = "text/html"
+                self._header = (
+                    "HTTP/1.1 401 Unauthorized\r\n"
+                    f"Content-Length: {len(unauthorized_content)}\r\n"
+                    "Content-Type: text/html\r\n"
+                    "Connection: close\r\n\r\n"
+                ).encode("utf-8")
+                return self._header + self._content
 
         c_len, self._content = self.build_content(path, base_dir)
         self._header = self.build_response_header(request)

@@ -102,6 +102,12 @@ class Request():
         #
         # TODO manage the webapp hook in this mounting point
         #
+        if routes:
+            for (m, p), func in routes.items():
+                # Simple route match: method and exact path
+                if m == self.method and p == self.path:
+                    self.hook = func
+                    break
         
         if not routes == {}:
             self.routes = routes
@@ -116,6 +122,17 @@ class Request():
             #
             #  TODO: implement the cookie function here
             #        by parsing the header            #
+        # Extract and store body
+        if "\r\n\r\n" in request:
+            header_part, body_part = request.split("\r\n\r\n", 1)
+        else:
+            header_part, body_part = request, ""
+
+        # Store the request body for later use
+        self.body = body_part.strip()
+
+        # (Optional) Debug
+        print("[DEBUG] Parsed body:", repr(self.body))
 
         return
 

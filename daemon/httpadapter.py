@@ -103,16 +103,37 @@ class HttpAdapter:
         resp = self.response
 
         # Handle the request
-        msg = conn.recv(1024).decode()
+        # msg = conn.recv(1024).decode()
+
+        msg = ""
+        conn.settimeout(2)  # prevent infinite hang
+
+        while True:
+            try:
+                chunk = conn.recv(1024).decode()
+                if not chunk:
+                    break
+                msg += chunk
+                if "\r\n\r\n" in msg:
+                    break
+            except socket.timeout:
+                break
+        print("[DEBUG] Received request from", addr)
+        print("[DEBUG] Raw HTTP message:\n", msg)
+
         req.prepare(msg, routes)
 
         # Handle request hook
         if req.hook:
             print("[HttpAdapter] hook in route-path METHOD {} PATH {}".format(req.hook._route_path,req.hook._route_methods))
-            req.hook(headers = "bksysnet",body = "get in touch")
             #
             # TODO: handle for App hook here
             #
+            result = req.hook(headers=req.headers, body=req.body)
+            resp.body = result
+            print("[DEBUG] Route handler returned:", result)
+        else:
+            print("[WARN] No route matched for request")
 
         # Build response
         response = resp.build_response(req)
