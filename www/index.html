@@ -17,5 +17,49 @@
   
        <img src="images/welcome.png" alt="bksysnet at HCMUT" width="500" height="600">  
 </div>
+
+<!-- Chat Application -->
+<div>
+    <h1>P2P Chat</h1>
+    <div>
+        <h2>Messages</h2>
+        <div id="messages" style="border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll;">
+            <!-- Messages will be loaded here -->
+        </div>
+    </div>
+    <div>
+        <h2>Send a message</h2>
+        <form action="/send-message" method="post">
+            <input type="text" name="message" size="50"/>
+            <input type="submit" value="Send"/>
+        </form>
+    </div>
+    <div>
+        <h2>Peers</h2>
+        <form action="/add-peer" method="post">
+            <input type="text" name="peer" placeholder="ip:port"/>
+            <input type="submit" value="Add Peer"/>
+        </form>
+        <p>Note: Peer list does not auto-refresh. Add peers from each instance of the application.</p>
+    </div>
+</div>
+
+<script>
+    function fetchMessages() {
+        fetch('/get-messages')
+            .then(response => response.json())
+            .then(data => {
+                const messagesDiv = document.getElementById('messages');
+                messagesDiv.innerHTML = data.join('<br>');
+                // Scroll to the bottom
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            });
+    }
+    // Fetch messages every 2 seconds
+    setInterval(fetchMessages, 2000);
+    // Initial fetch
+    fetchMessages();
+</script>
+
 </body>
 </html>

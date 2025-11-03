@@ -230,7 +230,7 @@ class Response():
             "Accept-Language": "{}".format(reqhdr.get("Accept-Language", "en-US,en;q=0.9")),
             "Authorization": "{}".format(reqhdr.get("Authorization", "Basic <credentials>")),
             "Cache-Control": "no-cache",
-            "Content-Type": "{}".format(self.headers['Content-Type']),
+            "Content-Type": "{}".format(self.headers.get('Content-Type', 'text/plain')),
             "Content-Length": "{}".format(len(self._content)),
         #   "Cookie": "{}".format(reqhdr.get("Cookie", "sessionid=xyz789")), #dummy cookie
         #
