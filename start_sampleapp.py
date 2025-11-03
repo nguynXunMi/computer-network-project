@@ -91,7 +91,7 @@ def login(headers="guest", body="anonymous"):
             f"{unauthorized_html}"
         )
 
-@app.route('/', methods=['GET'])
+@app.route('/index.html', methods=['GET'])
 def root(headers=None, body=None):
     print("[DEBUG] / called")
 
@@ -105,7 +105,6 @@ def root(headers=None, body=None):
     authorized = "auth=true" in cookie_header
 
     if authorized:
-        # Simple HTML for the chat interface
         base_dir = os.path.dirname(os.path.abspath(__file__))
         html_path = os.path.join(base_dir, "www", "index.html")
 
