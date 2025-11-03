@@ -74,8 +74,10 @@ class Request():
 
             if path == '/':
                 path = '/index.html'
+            elif path == "/login":
+                path = "/login.html"
         except Exception:
-            return None, None
+            return None, None, None
 
         return method, path, version
              
@@ -143,6 +145,14 @@ class Request():
         # TODO prepare the request authentication
         #
 	# self.auth = ...
+        ctype = self.headers.get('content-type', '')
+        if 'application/json' in ctype:
+            try:
+                self.json = json.loads(self.body)
+            except Exception:
+                self.json = {}
+        else:
+            self.json = {}
         return
 
 
