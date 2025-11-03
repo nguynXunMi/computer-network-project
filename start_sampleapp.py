@@ -25,8 +25,10 @@ and can be configured via command-line arguments.
 """
 
 
+import json
 import socket
 import argparse
+import os
 
 
 from daemon.weaprous import WeApRous
@@ -54,19 +56,30 @@ def login(headers="guest", body="anonymous"):
     print ("[SampleApp] Logging in {} to {}".format(headers, body))
     print("[DEBUG] /login called")
     try:
-        data = parse.parse_qs(body)
-        username = data.get("username", [None])[0]
-        password = data.get("password", [None])[0]
+        data = json.loads(body)
+        username = data.get("username")
+        password = data.get("password")
     except Exception:
         return "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nInvalid request body format"
 
     # Check credentials
     if username == "admin" and password == "password":
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        html_path = os.path.join(base_dir, "www", "index.html")
+        try:
+            with open(html_path, "r", encoding="utf-8") as f:
+                html = f.read()
+        except FileNotFoundError:
+            html = "<h1>Index page not found</h1>"
+
         return (
-            "HTTP/1.1 302 Found\r\n"
-            "Location: /\r\n"
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/html\r\n"
             "Set-Cookie: auth=true\r\n"
+            f"Content-Length: {len(html)}\r\n"
+            "Connection: close\r\n"
             "\r\n"
+            f"{html}"
         )
     else:
         unauthorized_html = "<h1>401 Unauthorized</h1><p>Invalid credentials.</p>"

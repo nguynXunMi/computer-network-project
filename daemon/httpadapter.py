@@ -14,15 +14,16 @@
 daemon.httpadapter
 ~~~~~~~~~~~~~~~~~
 
+This module provides a http adapter object to manage and persist
 http settings (headers, bodies). The adapter supports both
 raw URL paths and RESTful route definitions, and integrates with
 Request and Response objects to handle client-server communication.
 """
 import socket
-
 from .request import Request
 from .response import Response
 from .dictionary import CaseInsensitiveDict
+from . import utils
 
 class HttpAdapter:
     """
@@ -31,6 +32,7 @@ class HttpAdapter:
 
     The `HttpAdapter` class encapsulates the logic for receiving HTTP requests,
     dispatching them to appropriate route handlers, and constructing responses.
+    It supports RESTful routing via hooks and integrates with :class:`Request <Request>`
     and :class:`Response <Response>` objects for full request lifecycle management.
 
     Attributes:
@@ -119,6 +121,7 @@ class HttpAdapter:
                 break
         print("[DEBUG] Received request from", addr)
         print("[DEBUG] Raw HTTP message:\n", msg)
+
         if not msg:
             conn.close()
             return # Ignore empty requests
@@ -150,3 +153,109 @@ class HttpAdapter:
         conn.sendall(response)
         conn.close()
 
+    def extract_cookies(self, req):
+        """
+        Build cookies from the :class:`Request <Request>` headers.
+
+        :param req:(Request) The :class:`Request <Request>` object.
+        :rtype: cookies - A dictionary of cookie key-value pairs.
+        """
+        cookies = {}
+        cookie_header = req.headers.get('cookie', '')
+        if cookie_header:
+            for pair in cookie_header.split(';'):
+                if '=' in pair:
+                    key, value = pair.strip().split('=', 1)
+                    cookies[key] = value
+        return cookies
+
+    def build_response(self, req, resp):
+        """Builds a :class:`Response <Response>` object
+
+        :param req: The :class:`Request <Request>` used to generate the response.
+        :param resp: The  response object.
+        :rtype: Response
+        """
+        response = Response()
+
+        # Set encoding.
+        response.encoding = utils.get_encoding_from_headers(req.headers)
+        response.raw = resp
+        response.reason = response.raw.reason
+
+        if isinstance(req.url, bytes):
+            response.url = req.url.decode("utf-8")
+        else:
+            response.url = req.url
+
+        # Add new cookies from the server.
+        response.cookies = self.extract_cookies(req)
+
+        # Give the Response some context.
+        response.request = req
+        response.connection = self
+
+        return response
+
+    # def get_connection(self, url, proxies=None):
+        # """Returns a url connection for the given URL.
+
+        # :param url: The URL to connect to.
+        # :param proxies: (optional) A Requests-style dictionary of proxies used on this request.
+        # :rtype: int
+        # """
+
+        # proxy = select_proxy(url, proxies)
+
+        # if proxy:
+            # proxy = prepend_scheme_if_needed(proxy, "http")
+            # proxy_url = parse_url(proxy)
+            # if not proxy_url.host:
+                # raise InvalidProxyURL(
+                    # "Please check proxy URL. It is malformed "
+                    # "and could be missing the host."
+                # )
+            # proxy_manager = self.proxy_manager_for(proxy)
+            # conn = proxy_manager.connection_from_url(url)
+        # else:
+            # # Only scheme should be lower case
+            # parsed = urlparse(url)
+            # url = parsed.geturl()
+            # conn = self.poolmanager.connection_from_url(url)
+
+        # return conn
+
+
+    def add_headers(self, request):
+        """
+        Add headers to the request.
+
+        This method is intended to be overridden by subclasses to inject
+        custom headers. It does nothing by default.
+
+
+        :param request: :class:`Request <Request>` to add headers to.
+        """
+        pass
+
+    def build_proxy_headers(self, proxy):
+        """Returns a dictionary of the headers to add to any request sent
+        through a proxy.
+
+        :class:`HttpAdapter <HttpAdapter>`.
+
+        :param proxy: The url of the proxy being used for this request.
+        :rtype: dict
+        """
+        headers = {}
+        #
+        # TODO: build your authentication here
+        #       username, password =...
+        # we provide dummy auth here
+        #
+        username, password = ("user1", "password")
+
+        if username:
+            headers["Proxy-Authorization"] = (username, password)
+
+        return headers
