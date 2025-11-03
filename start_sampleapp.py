@@ -24,14 +24,19 @@ HTTP requests. The application includes a login endpoint and a greeting endpoint
 and can be configured via command-line arguments.
 """
 
-import json
+
 import socket
 import argparse
-import os
+
 
 from daemon.weaprous import WeApRous
+from urllib import parse, request as url_request
 
 PORT = 8000  # Default port
+
+# In-memory storage for peers and messages
+peers = []
+messages = []
 
 app = WeApRous()
 
@@ -49,30 +54,19 @@ def login(headers="guest", body="anonymous"):
     print ("[SampleApp] Logging in {} to {}".format(headers, body))
     print("[DEBUG] /login called")
     try:
-        data = json.loads(body)
-        username = data.get("username")
-        password = data.get("password")
+        data = parse.parse_qs(body)
+        username = data.get("username", [None])[0]
+        password = data.get("password", [None])[0]
     except Exception:
         return "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nInvalid request body format"
 
     # Check credentials
     if username == "admin" and password == "password":
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        html_path = os.path.join(base_dir, "www", "index.html")
-        try:
-            with open(html_path, "r", encoding="utf-8") as f:
-                html = f.read()
-        except FileNotFoundError:
-            html = "<h1>Index page not found</h1>"
-        
         return (
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: text/html\r\n"
+            "HTTP/1.1 302 Found\r\n"
+            "Location: /\r\n"
             "Set-Cookie: auth=true\r\n"
-            f"Content-Length: {len(html)}\r\n"
-            "Connection: close\r\n"
             "\r\n"
-            f"{html}"
         )
     else:
         unauthorized_html = "<h1>401 Unauthorized</h1><p>Invalid credentials.</p>"
@@ -98,22 +92,64 @@ def root(headers=None, body=None):
     authorized = "auth=true" in cookie_header
 
     if authorized:
-        import os
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        html_path = os.path.join(base_dir, "www", "index.html")
-
-        try:
-            with open(html_path, "r", encoding="utf-8") as f:
-                html = f.read()
-        except FileNotFoundError:
-            html = "<h1>Index page not found</h1>"
+        # Simple HTML for the chat interface
+        html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>P2P Chat</title>
+        </head>
+        <body>
+            <h1>P2P Chat</h1>
+            <div>
+                <h2>Messages</h2>
+                <div id="messages" style="border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll;">
+                    {}
+                </div>
+            </div>
+            <div>
+                <h2>Send a message</h2>
+                <form action="/send-message" method="post">
+                    <input type="text" name="message" size="50"/>
+                    <input type="submit" value="Send"/>
+                </form>
+            </div>
+            <div>
+                <h2>Peers</h2>
+                <form action="/add-peer" method="post">
+                    <input type="text" name="peer" placeholder="ip:port"/>
+                    <input type="submit" value="Add Peer"/>
+                </form>
+                <ul>
+                    {}
+                </ul>
+            </div>
+        </body>
+        <script>
+            function fetchMessages() {{
+                fetch('/get-messages')
+                    .then(response => response.json())
+                    .then(data => {{
+                        const messagesDiv = document.getElementById('messages');
+                        messagesDiv.innerHTML = data.join('<br>');
+                        // Scroll to the bottom
+                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                    }});
+            }}
+            // Fetch messages every 2 seconds
+            setInterval(fetchMessages, 2000);
+            // Initial fetch
+            fetchMessages();
+        </script>
+        </html>
+        """.format("<br>".join(messages), "".join([f"<li>{p}</li>" for p in peers]))
 
         return (
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: text/html\r\n"
+            f"HTTP/1.1 200 OK\r\n"
+            f"Content-Type: text/html\r\n"
             f"Content-Length: {len(html)}\r\n"
-            "Connection: close\r\n"
-            "\r\n"
+            f"Connection: close\r\n"
+            f"\r\n"
             f"{html}"
         )
 
@@ -132,25 +168,109 @@ def root(headers=None, body=None):
             f"{unauthorized_html}"
         )
 
-@app.route('/hello', methods=['PUT'])
-def hello(headers, body):
+@app.route('/add-peer', methods=['POST'])
+def add_peer(headers, body):
     """
-    Handle greeting via PUT request.
-
-    This route prints a greeting message to the console using the provided headers
-    and body.
-
-    :param headers (str): The request headers or user identifier.
-    :param body (str): The request body or message payload.
+    Add a new peer to the list.
     """
-    print ("[SampleApp] ['PUT'] Hello in {} to {}".format(headers, body))
+    try:
+        # The body is url-encoded, e.g., "peer=127.0.0.1:8001"
+        parsed_body = parse.parse_qs(body)
+        peer_address = parsed_body.get('peer', [''])[0].strip()
+
+        # Sanitize the peer address
+        if peer_address.startswith("http://"):
+            peer_address = peer_address[7:]
+        if peer_address.startswith("https://"):
+            peer_address = peer_address[8:]
+        peer_address = peer_address.strip('/')
+
+        if peer_address and peer_address not in peers:
+            peers.append(peer_address)
+            print(f"[ChatApp] Added peer: {peer_address}")
+    except Exception as e:
+        print(f"[ChatApp] Error adding peer: {e}")
+        # A simple error response
+        return "HTTP/1.1 400 Bad Request\r\n\r\n"
+
+    # Redirect back to the main page to refresh the UI
+    return "HTTP/1.1 302 Found\r\nLocation: /\r\n\r\n"
+
+
+@app.route('/send-message', methods=['POST'])
+def send_message(headers, body):
+    """
+    Send a message to all known peers.
+    """
+    try:
+        parsed_body = parse.parse_qs(body)
+        message_text = parsed_body.get('message', [''])[0]
+
+        if message_text:
+            # Add message to local list
+            messages.append(f"Me: {message_text}")
+            print(f"[ChatApp] Sending message: {message_text}")
+
+            # Broadcast to other peers
+            for peer in peers:
+                try:
+                    # Prepare the message to be sent to the peer
+                    peer_message = f"Peer ({socket.gethostname()}): {message_text}"
+                    data = parse.urlencode({'message': peer_message}).encode()
+
+                    req = url_request.Request(f"http://{peer}/receive-message", data=data, method='POST')
+                    with url_request.urlopen(req, timeout=2) as response:
+                        if response.status != 200:
+                            print(f"[ChatApp] Error sending to peer {peer}: Status {response.status}")
+                except Exception as e:
+                    print(f"[ChatApp] Could not send message to peer {peer}: {e}")
+
+    except Exception as e:
+        print(f"[ChatApp] Error sending message: {e}")
+        return "HTTP/1.1 400 Bad Request\r\n\r\n"
+
+    # Redirect back to the main page
+    return "HTTP/1.1 302 Found\r\nLocation: /\r\n\r\n"
+
+
+@app.route('/receive-message', methods=['POST'])
+def receive_message(headers, body):
+    """
+    Receive a message from another peer.
+    """
+    try:
+        parsed_body = parse.parse_qs(body)
+        message_text = parsed_body.get('message', [''])[0]
+        if message_text:
+            messages.append(message_text)
+            print(f"[ChatApp] Received message: {message_text}")
+    except Exception as e:
+        print(f"[ChatApp] Error receiving message: {e}")
+        return "HTTP/1.1 400 Bad Request\r\n\r\n"
+
+    return "HTTP/1.1 200 OK\r\n\r\n"
+
+@app.route('/get-messages', methods=['GET'])
+def get_messages(headers, body):
+    """
+    Return the list of messages as JSON.
+    """
+    import json
+    response_body = json.dumps(messages)
+    return (
+        f"HTTP/1.1 200 OK\r\n"
+        f"Content-Type: application/json\r\n"
+        f"Content-Length: {len(response_body)}\r\n"
+        f"\r\n"
+        f"{response_body}"
+    )
 
 if __name__ == "__main__":
     # Parse command-line arguments to configure server IP and port
     parser = argparse.ArgumentParser(prog='Backend', description='', epilog='Beckend daemon')
     parser.add_argument('--server-ip', default='0.0.0.0')
     parser.add_argument('--server-port', type=int, default=PORT)
- 
+
     args = parser.parse_args()
     ip = args.server_ip
     port = args.server_port

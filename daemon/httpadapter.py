@@ -14,11 +14,11 @@
 daemon.httpadapter
 ~~~~~~~~~~~~~~~~~
 
-This module provides a http adapter object to manage and persist 
 http settings (headers, bodies). The adapter supports both
 raw URL paths and RESTful route definitions, and integrates with
 Request and Response objects to handle client-server communication.
 """
+import socket
 
 from .request import Request
 from .response import Response
@@ -31,7 +31,6 @@ class HttpAdapter:
 
     The `HttpAdapter` class encapsulates the logic for receiving HTTP requests,
     dispatching them to appropriate route handlers, and constructing responses.
-    It supports RESTful routing via hooks and integrates with :class:`Request <Request>` 
     and :class:`Response <Response>` objects for full request lifecycle management.
 
     Attributes:
@@ -94,7 +93,7 @@ class HttpAdapter:
         """
 
         # Connection handler.
-        self.conn = conn        
+        self.conn = conn
         # Connection address.
         self.connaddr = addr
         # Request handler
@@ -120,6 +119,9 @@ class HttpAdapter:
                 break
         print("[DEBUG] Received request from", addr)
         print("[DEBUG] Raw HTTP message:\n", msg)
+        if not msg:
+            conn.close()
+            return # Ignore empty requests
 
         req.prepare(msg, routes)
 
@@ -130,123 +132,21 @@ class HttpAdapter:
             # TODO: handle for App hook here
             #
             result = req.hook(headers=req.headers, body=req.body)
-            resp.body = result
             print("[DEBUG] Route handler returned:", result)
+
+            # Check if the handler returned a full HTTP response string
+            if isinstance(result, str) and result.startswith("HTTP/"):
+                response = result.encode()
+            else:
+                # If not a full response, set it as the body and build the response
+                resp.body = result
+                response = resp.build_response(req)
         else:
             print("[WARN] No route matched for request")
-
-        # Build response
-        response = resp.build_response(req)
+            # If no route matched, build a response (will look for static file or return 404)
+            response = resp.build_response(req)
 
         #print(response)
         conn.sendall(response)
         conn.close()
 
-    @property
-    def extract_cookies(self, req, resp):
-        """
-        Build cookies from the :class:`Request <Request>` headers.
-
-        :param req:(Request) The :class:`Request <Request>` object.
-        :param resp: (Response) The res:class:`Response <Response>` object.
-        :rtype: cookies - A dictionary of cookie key-value pairs.
-        """
-        cookies = {}
-        for header in headers:
-            if header.startswith("Cookie:"):
-                cookie_str = header.split(":", 1)[1].strip()
-                for pair in cookie_str.split(";"):
-                    key, value = pair.strip().split("=")
-                    cookies[key] = value
-        return cookies
-
-    def build_response(self, req, resp):
-        """Builds a :class:`Response <Response>` object 
-
-        :param req: The :class:`Request <Request>` used to generate the response.
-        :param resp: The  response object.
-        :rtype: Response
-        """
-        response = Response()
-
-        # Set encoding.
-        response.encoding = get_encoding_from_headers(response.headers)
-        response.raw = resp
-        response.reason = response.raw.reason
-
-        if isinstance(req.url, bytes):
-            response.url = req.url.decode("utf-8")
-        else:
-            response.url = req.url
-
-        # Add new cookies from the server.
-        response.cookies = extract_cookies(req)
-
-        # Give the Response some context.
-        response.request = req
-        response.connection = self
-
-        return response
-
-    # def get_connection(self, url, proxies=None):
-        # """Returns a url connection for the given URL. 
-
-        # :param url: The URL to connect to.
-        # :param proxies: (optional) A Requests-style dictionary of proxies used on this request.
-        # :rtype: int
-        # """
-
-        # proxy = select_proxy(url, proxies)
-
-        # if proxy:
-            # proxy = prepend_scheme_if_needed(proxy, "http")
-            # proxy_url = parse_url(proxy)
-            # if not proxy_url.host:
-                # raise InvalidProxyURL(
-                    # "Please check proxy URL. It is malformed "
-                    # "and could be missing the host."
-                # )
-            # proxy_manager = self.proxy_manager_for(proxy)
-            # conn = proxy_manager.connection_from_url(url)
-        # else:
-            # # Only scheme should be lower case
-            # parsed = urlparse(url)
-            # url = parsed.geturl()
-            # conn = self.poolmanager.connection_from_url(url)
-
-        # return conn
-
-
-    def add_headers(self, request):
-        """
-        Add headers to the request.
-
-        This method is intended to be overridden by subclasses to inject
-        custom headers. It does nothing by default.
-
-        
-        :param request: :class:`Request <Request>` to add headers to.
-        """
-        pass
-
-    def build_proxy_headers(self, proxy):
-        """Returns a dictionary of the headers to add to any request sent
-        through a proxy. 
-
-        :class:`HttpAdapter <HttpAdapter>`.
-
-        :param proxy: The url of the proxy being used for this request.
-        :rtype: dict
-        """
-        headers = {}
-        #
-        # TODO: build your authentication here
-        #       username, password =...
-        # we provide dummy auth here
-        #
-        username, password = ("user1", "password")
-
-        if username:
-            headers["Proxy-Authorization"] = (username, password)
-
-        return headers
