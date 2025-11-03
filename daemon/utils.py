@@ -26,22 +26,3 @@ def get_auth_from_url(url):
         auth = ("", "")
 
     return auth
-
-def get_encoding_from_headers(headers):
-    """Returns encoding from given HTTP Header dictionary.
-
-    :param headers: dictionary to extract encoding from.
-    :rtype: str
-    """
-    content_type = headers.get('content-type')
-
-    if not content_type:
-        return None
-
-    content_type, params = content_type.split(';', 1)
-    for param in params.split(';'):
-        param = param.strip()
-        if param.lower().startswith('charset='):
-            return param[len('charset='):].strip()
-
-    return None
