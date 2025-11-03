@@ -106,63 +106,21 @@ def root(headers=None, body=None):
 
     if authorized:
         # Simple HTML for the chat interface
-        html = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>P2P Chat</title>
-        </head>
-        <body>
-            <h1>P2P Chat</h1>
-            <div>
-                <h2>Messages</h2>
-                <div id="messages" style="border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll;">
-                    {}
-                </div>
-            </div>
-            <div>
-                <h2>Send a message</h2>
-                <form action="/send-message" method="post">
-                    <input type="text" name="message" size="50"/>
-                    <input type="submit" value="Send"/>
-                </form>
-            </div>
-            <div>
-                <h2>Peers</h2>
-                <form action="/add-peer" method="post">
-                    <input type="text" name="peer" placeholder="ip:port"/>
-                    <input type="submit" value="Add Peer"/>
-                </form>
-                <ul>
-                    {}
-                </ul>
-            </div>
-        </body>
-        <script>
-            function fetchMessages() {{
-                fetch('/get-messages')
-                    .then(response => response.json())
-                    .then(data => {{
-                        const messagesDiv = document.getElementById('messages');
-                        messagesDiv.innerHTML = data.join('<br>');
-                        // Scroll to the bottom
-                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-                    }});
-            }}
-            // Fetch messages every 2 seconds
-            setInterval(fetchMessages, 2000);
-            // Initial fetch
-            fetchMessages();
-        </script>
-        </html>
-        """.format("<br>".join(messages), "".join([f"<li>{p}</li>" for p in peers]))
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        html_path = os.path.join(base_dir, "www", "index.html")
+
+        try:
+            with open(html_path, "r", encoding="utf-8") as f:
+                html = f.read()
+        except FileNotFoundError:
+            html = "<h1>Index page not found</h1>"
 
         return (
-            f"HTTP/1.1 200 OK\r\n"
-            f"Content-Type: text/html\r\n"
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/html\r\n"
             f"Content-Length: {len(html)}\r\n"
-            f"Connection: close\r\n"
-            f"\r\n"
+            "Connection: close\r\n"
+            "\r\n"
             f"{html}"
         )
 
