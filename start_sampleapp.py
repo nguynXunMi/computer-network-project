@@ -29,6 +29,7 @@ import json
 import socket
 import argparse
 import os
+import time
 
 
 from daemon.weaprous import WeApRous
@@ -187,17 +188,23 @@ def send_message(headers, body):
 
             # Broadcast to other peers
             for peer in peers:
-                try:
-                    # Prepare the message to be sent to the peer
-                    peer_message = f"Peer ({app.port}): {message_text}"
-                    data = parse.urlencode({'message': peer_message}).encode()
-
-                    req = url_request.Request(f"http://{peer}/receive-message", data=data, method='POST')
-                    with url_request.urlopen(req, timeout=2) as response:
-                        if response.status != 200:
-                            print(f"[ChatApp] Error sending to peer {peer}: Status {response.status}")
-                except Exception as e:
-                    print(f"[ChatApp] Could not send message to peer {peer}: {e}")
+                # Retry sending up to 3 times with short backoff
+                peer_message = f"Peer ({app.port}): {message_text}"
+                data = parse.urlencode({'message': peer_message}).encode()
+                for attempt in range(3):
+                    try:
+                        req = url_request.Request(f"http://{peer}/receive-message", data=data, method='POST')
+                        with url_request.urlopen(req, timeout=5) as response:
+                            if response.status == 200:
+                                break
+                            else:
+                                print(f"[ChatApp] Error sending to peer {peer}: Status {response.status} (attempt {attempt+1})")
+                        time.sleep(0.4 * (attempt + 1))
+                    except Exception as e:
+                        if attempt == 2:
+                            print(f"[ChatApp] Could not send message to peer {peer}: {e}")
+                        else:
+                            time.sleep(0.4 * (attempt + 1))
 
     except Exception as e:
         print(f"[ChatApp] Error sending message: {e}")
