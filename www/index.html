@@ -20,7 +20,7 @@
 
 <!-- Chat Application -->
 <div>
-    <h1>P2P Chat</h1>
+    <h1>P2P Chat (You are on Peer: {{PEER_PORT}})</h1>
     <div>
         <h2>Messages</h2>
         <div id="messages" style="border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll;">
@@ -29,8 +29,8 @@
     </div>
     <div>
         <h2>Send a message</h2>
-        <form action="/send-message" method="post">
-            <input type="text" name="message" size="50"/>
+        <form id="send-message-form">
+            <input type="text" id="message-input" name="message" size="50" autocomplete="off"/>
             <input type="submit" value="Send"/>
         </form>
     </div>
@@ -45,20 +45,50 @@
 </div>
 
 <script>
+    // --- Fetch messages periodically ---
     function fetchMessages() {
         fetch('/get-messages')
             .then(response => response.json())
             .then(data => {
                 const messagesDiv = document.getElementById('messages');
                 messagesDiv.innerHTML = data.join('<br>');
-                // Scroll to the bottom
                 messagesDiv.scrollTop = messagesDiv.scrollHeight;
             });
     }
-    // Fetch messages every 2 seconds
     setInterval(fetchMessages, 2000);
-    // Initial fetch
     fetchMessages();
+
+    // --- Handle sending messages asynchronously ---
+    document.getElementById('send-message-form').addEventListener('submit', function(event) {
+        event.preventDefault(); // Stop page reload
+
+        const messageInput = document.getElementById('message-input');
+        const message = messageInput.value;
+
+        if (message.trim() === '') {
+            return; // Don't send empty messages
+        }
+
+        const formData = new URLSearchParams();
+        formData.append('message', message);
+
+        fetch('/send-message', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData
+        }).then(response => {
+            if (response.ok) {
+                messageInput.value = ''; // Clear input field
+                fetchMessages(); // Immediately fetch new messages
+            } else {
+                alert('Failed to send message.');
+            }
+        }).catch(error => {
+            console.error('Error sending message:', error);
+        });
+    });
 </script>
 
 </body>

@@ -69,6 +69,8 @@ def login(headers="guest", body="anonymous"):
         try:
             with open(html_path, "r", encoding="utf-8") as f:
                 html = f.read()
+            # Inject the current peer's port into the HTML
+            html = html.replace("{{PEER_PORT}}", str(app.port))
         except FileNotFoundError:
             html = "<h1>Index page not found</h1>"
 
@@ -111,6 +113,8 @@ def root(headers=None, body=None):
         try:
             with open(html_path, "r", encoding="utf-8") as f:
                 html = f.read()
+            # Inject the current peer's port into the HTML
+            html = html.replace("{{PEER_PORT}}", str(app.port))
         except FileNotFoundError:
             html = "<h1>Index page not found</h1>"
 
@@ -245,6 +249,7 @@ if __name__ == "__main__":
     ip = args.server_ip
     port = args.server_port
 
-    # Prepare and launch the RESTful application
+    # Store the port and prepare the address
+    app.port = port
     app.prepare_address(ip, port)
     app.run()
