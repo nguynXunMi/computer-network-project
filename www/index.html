@@ -36,11 +36,13 @@
     </div>
     <div>
         <h2>Peers</h2>
-        <form action="/add-peer" method="post">
-            <input type="text" name="peer" placeholder="ip:port"/>
+        <ul id="peer-list" style="list-style-type: none; padding: 0;">
+            <!-- Peers will be loaded here -->
+        </ul>
+        <form id="add-peer-form">
+            <input type="text" id="peer-input" name="peer" placeholder="ip:port" autocomplete="off"/>
             <input type="submit" value="Add Peer"/>
         </form>
-        <p>Note: Peer list does not auto-refresh. Add peers from each instance of the application.</p>
     </div>
 </div>
 
@@ -57,6 +59,50 @@
     }
     setInterval(fetchMessages, 2000);
     fetchMessages();
+
+    // --- Handle adding peers asynchronously ---
+    document.getElementById('add-peer-form').addEventListener('submit', function(event) {
+        event.preventDefault(); // Stop page reload
+
+        const peerInput = document.getElementById('peer-input');
+        const peer = peerInput.value;
+
+        if (peer.trim() === '') {
+            return;
+        }
+
+        const formData = new URLSearchParams();
+        formData.append('peer', peer);
+
+        fetch('/add-peer', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData
+        }).then(response => {
+            if (response.ok) {
+                peerInput.value = ''; // Clear input field
+                fetchPeers(); // Immediately fetch new peer list
+            } else {
+                alert('Failed to add peer.');
+            }
+        }).catch(error => {
+            console.error('Error adding peer:', error);
+        });
+    });
+
+    // --- Fetch peers periodically ---
+    function fetchPeers() {
+        fetch('/get-peers')
+            .then(response => response.json())
+            .then(data => {
+                const peerList = document.getElementById('peer-list');
+                peerList.innerHTML = data.map(peer => `<li>${peer}</li>`).join('');
+            });
+    }
+    setInterval(fetchPeers, 5000); // Fetch every 5 seconds
+    fetchPeers();
 
     // --- Handle sending messages asynchronously ---
     document.getElementById('send-message-form').addEventListener('submit', function(event) {
