@@ -69,6 +69,8 @@ def login(headers="guest", body="anonymous"):
         try:
             with open(html_path, "r", encoding="utf-8") as f:
                 html = f.read()
+            # Inject the current peer's port into the HTML
+            html = html.replace("{{PEER_PORT}}", str(app.port))
         except FileNotFoundError:
             html = "<h1>Index page not found</h1>"
 
@@ -111,6 +113,8 @@ def root(headers=None, body=None):
         try:
             with open(html_path, "r", encoding="utf-8") as f:
                 html = f.read()
+            # Inject the current peer's port into the HTML
+            html = html.replace("{{PEER_PORT}}", str(app.port))
         except FileNotFoundError:
             html = "<h1>Index page not found</h1>"
 
@@ -185,7 +189,7 @@ def send_message(headers, body):
             for peer in peers:
                 try:
                     # Prepare the message to be sent to the peer
-                    peer_message = f"Peer ({socket.gethostname()}): {message_text}"
+                    peer_message = f"Peer ({app.port}): {message_text}"
                     data = parse.urlencode({'message': peer_message}).encode()
 
                     req = url_request.Request(f"http://{peer}/receive-message", data=data, method='POST')
@@ -235,6 +239,22 @@ def get_messages(headers, body):
         f"{response_body}"
     )
 
+
+@app.route('/get-peers', methods=['GET'])
+def get_peers(headers, body):
+    """
+    Return the list of peers as JSON.
+    """
+    import json
+    response_body = json.dumps(peers)
+    return (
+        f"HTTP/1.1 200 OK\r\n"
+        f"Content-Type: application/json\r\n"
+        f"Content-Length: {len(response_body)}\r\n"
+        f"\r\n"
+        f"{response_body}"
+    )
+
 if __name__ == "__main__":
     # Parse command-line arguments to configure server IP and port
     parser = argparse.ArgumentParser(prog='Backend', description='', epilog='Beckend daemon')
@@ -245,6 +265,7 @@ if __name__ == "__main__":
     ip = args.server_ip
     port = args.server_port
 
-    # Prepare and launch the RESTful application
+    # Store the port and prepare the address
+    app.port = port
     app.prepare_address(ip, port)
     app.run()
