@@ -107,11 +107,12 @@ class HttpAdapter:
         # msg = conn.recv(1024).decode()
 
         msg = ""
-        conn.settimeout(2)  # prevent infinite hang
+        conn.settimeout(5)  # allow a bit longer for body to arrive
 
+        # 1) Read headers
         while True:
             try:
-                chunk = conn.recv(1024).decode()
+                chunk = conn.recv(4096).decode()
                 if not chunk:
                     break
                 msg += chunk
@@ -119,6 +120,37 @@ class HttpAdapter:
                     break
             except socket.timeout:
                 break
+
+        # 2) If there is a Content-Length, read the body fully
+        if msg:
+            try:
+                header_part, remainder = msg.split("\r\n\r\n", 1)
+            except ValueError:
+                header_part, remainder = msg, ""
+            headers_lower = header_part.lower()
+            content_length = 0
+            for line in header_part.split("\r\n"):
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    if k.strip().lower() == "content-length":
+                        try:
+                            content_length = int(v.strip())
+                        except Exception:
+                            content_length = 0
+                        break
+            body_bytes_needed = max(0, content_length - len(remainder.encode('utf-8')))
+            body_data = remainder
+            while body_bytes_needed > 0:
+                try:
+                    chunk = conn.recv(min(4096, body_bytes_needed))
+                    if not chunk:
+                        break
+                    body_data += chunk.decode()
+                    body_bytes_needed -= len(chunk)
+                except socket.timeout:
+                    break
+            msg = header_part + "\r\n\r\n" + body_data
+
         print("[DEBUG] Received request from", addr)
         print("[DEBUG] Raw HTTP message:\n", msg)
 
