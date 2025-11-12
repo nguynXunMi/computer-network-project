@@ -189,7 +189,7 @@ def send_message(headers, body):
             for peer in peers:
                 try:
                     # Prepare the message to be sent to the peer
-                    peer_message = f"Peer ({socket.gethostname()}): {message_text}"
+                    peer_message = f"Peer ({app.port}): {message_text}"
                     data = parse.urlencode({'message': peer_message}).encode()
 
                     req = url_request.Request(f"http://{peer}/receive-message", data=data, method='POST')
