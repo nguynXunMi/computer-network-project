@@ -75,32 +75,55 @@ def run_backend(ip, port, routes):
     :param routes (dict): Dictionary of route handlers.
     """
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    print("[Backend] Listening on port {}".format(port))
+    print("[Backend] route settings {}".format(routes))
 
     try:
         server.bind((ip, port))
         server.listen(50)
+        server.settimeout(1)  # Set timeout 1 giây để CTRL+C hoạt động
         print("[Backend] Listening on port {}".format(port))
         if routes != {}:
             print("[Backend] route settings {}".format(routes))
 
         while True:
-            conn, addr = server.accept()
-            #
-            #  TODO: implement the step of the client incomping connection
-            #        using multi-thread programming with the
-            #        provided handle_client routine
-            #
-            print("[Backend] Accepted connection from", addr)
+            try:
+                conn, addr = server.accept()
+                #
+                #  TODO: implement the step of the client incomping connection
+                #        using multi-thread programming with the
+                #        provided handle_client routine
+                #
+                # Chấp nhận kết nối client (blocking)
 
-            # Create a new thread to handle this client
-            client_thread = threading.Thread(
-                target=handle_client,
-                args=(ip, port, conn, addr, routes)
-            )
-            client_thread.daemon = True
-            client_thread.start()
+                # Tạo một thread mới để xử lý kết nối này bằng hàm handle_client
+                t = threading.Thread(
+                    target=handle_client,
+                    args=(ip, port, conn, addr, routes),
+                    name="backend-client-{}:{}".format(addr[0], addr[1])  # for debugging purposes
+                )
+                # Đặt thread là daemon để khi process chính kết thúc thì các thread con cũng không ngăn chương trình thoát
+                t.daemon = True
+
+                # Khởi động thread (thread sẽ gọi handle_client(conn, addr, routes))
+                t.start()
+            except socket.timeout:
+                # Timeout để CTRL+C có thể gián đoạn
+                continue
+            except KeyboardInterrupt:
+                print("\n[Backend] Shutting down the server.")
+                try:
+                    server.close()
+                except Exception as e:
+                    print("Error closing server: {}".format(e))
+                    pass
+                break
+
+            except socket.error as e:
+                print("[Backend] Socket error on accept: {}".format(e))
+                continue
     except socket.error as e:
-      print("Socket error: {}".format(e))
+        print("Socket error 124: {}".format(e))
 
 def create_backend(ip, port, routes={}):
     """
