@@ -23,10 +23,15 @@ It defines basic route handlers and launches a TCP-based backend server to serve
 HTTP requests. The application includes a login endpoint and a greeting endpoint,
 and can be configured via command-line arguments.
 """
+# Quick overview
+# - This file can act as both a tracker (port 8000) and a peer (any other port).
+# - When a peer starts, it automatically registers to the tracker at <server-ip>:8000
+#   and periodically syncs the peer list (every SYNC_INTERVAL seconds).
+# - The simple UI is served from www/index.html. It polls the backend to show
+#   messages, channel list, and peers.
 
 
-import json
-import socket
+
 import argparse
 import os
 import time
@@ -37,8 +42,11 @@ from daemon.weaprous import WeApRous
 from urllib import parse, request as url_request
 
 PORT = 8000  # Default port
-
+SYNC_INTERVAL = 2  # seconds between background tracker syncs
 AUTO_TRACKER = 1
+
+# Note: auto-connect to tracker is enabled by default in the __main__ section.
+# There is no need for an AUTO_TRACKER env flag anymore.
 app = WeApRous()
 # In-memory storage for peers and messages
 peers = []
@@ -96,7 +104,6 @@ def _auto_register_and_sync(tracker, me):
             with url_request.urlopen(f"http://{tracker_norm}/tracker-peers", timeout=5) as r:
                 import json as _json
                 remote = _json.loads(r.read().decode('utf-8') or '[]')
-            print(f"[AutoSync] Fetched {len(remote)} peer(s) from tracker: {remote}")
 
             added = 0
             # Normalize and add new peers
@@ -106,15 +113,11 @@ def _auto_register_and_sync(tracker, me):
                 if normalized_p and normalized_p != me_norm and normalized_p not in current_peers_set:
                     peers.append(normalized_p)
                     added += 1
-
-            if added > 0:
-                print(f"[AutoSync] Added {added} new peer(s). Now have: {sorted(set(peers))}")
-
         except Exception as e:
             print(f"[AutoSync] Failed to connect or sync with tracker {tracker}: {e}")
 
         # Wait for the next cycle
-        time.sleep(3)
+        time.sleep(SYNC_INTERVAL)
 
 @app.route('/login', methods=['POST'])
 def login(headers="guest", body="anonymous"):
@@ -219,7 +222,6 @@ def create_channel(headers, body):
         # 1) Ensure channel exists locally
         if name not in channels:
             channels[name] = {"members": [], "messages": []}
-            print(f"[ChatApp] Created channel: {name}")
 
         # 2) For originator: auto-join + set active. For broadcast recipients: just create the channel (no join, no switch)
         peer_id = f"peer:{app.port}"
@@ -244,7 +246,6 @@ def create_channel(headers, body):
 
         return "HTTP/1.1 200 OK\r\n\r\n"
     except Exception as e:
-        print(f"[ChatApp] Error creating channel: {e}")
         return "HTTP/1.1 500 Internal Server Error\r\n\r\n"
 
 @app.route('/join-channel', methods=['POST'])
@@ -262,7 +263,6 @@ def join_channel(headers, body):
         if peer_id not in channels[name]["members"]:
             channels[name]["members"].append(peer_id)
         active_channel = name
-        print(f"[ChatApp] Joined channel: {name}")
         return "HTTP/1.1 200 OK\r\n\r\n"
     except Exception as e:
         print(f"[ChatApp] Error joining channel: {e}")
@@ -280,7 +280,6 @@ def set_active_channel(headers, body):
         if name not in channels:
             channels[name] = {"members": [], "messages": []}
         active_channel = name
-        print(f"[ChatApp] Active channel set to: {name}")
         return "HTTP/1.1 200 OK\r\n\r\n"
     except Exception as e:
         print(f"[ChatApp] Error setting active channel: {e}")
@@ -317,7 +316,6 @@ def set_username(headers, body):
         if not name:
             return "HTTP/1.1 400 Bad Request\r\n\r\n"
         current_user = name
-        print(f"[ChatApp] Username set to: {current_user}")
         return "HTTP/1.1 200 OK\r\n\r\n"
     except Exception as e:
         print(f"[ChatApp] Error setting username: {e}")
@@ -334,8 +332,6 @@ def whoami(headers, body):
         f"Content-Length: {len(response_body)}\r\n\r\n{response_body}"
     )
 
-
-
 # ================= Tracker (Centralized) APIs =================
 @app.route('/register', methods=['POST'])
 def tracker_register(headers, body):
@@ -347,7 +343,6 @@ def tracker_register(headers, body):
             return "HTTP/1.1 400 Bad Request\r\n\r\n"
         if peer not in tracker_registry:
             tracker_registry.append(peer)
-            print(f"[Tracker] Registered peer: {peer}")
         return "HTTP/1.1 200 OK\r\n\r\n"
     except Exception as e:
         print(f"[Tracker] Error register: {e}")
@@ -387,7 +382,6 @@ def sync_from_tracker(headers, body):
             if n and n not in peers and n != me_host:
                 peers.append(n)
                 added += 1
-        print(f"[Client] Synced {added} peers from tracker {tracker}")
         return "HTTP/1.1 200 OK\r\n\r\n"
     except Exception as e:
         print(f"[Client] Error syncing peers: {e}")
@@ -412,7 +406,6 @@ def register_to_tracker(headers, body):
         req = url_request.Request(f"http://{tracker}/register", data=data, method='POST')
         with url_request.urlopen(req, timeout=5):
             pass
-        print(f"[Client] Registered {me} to tracker {tracker}")
         return "HTTP/1.1 200 OK\r\n\r\n"
     except Exception as e:
         print(f"[Client] Error registering to tracker: {e}")
@@ -441,8 +434,6 @@ def send_message(headers, body):
             # Add message to local channel
             local_msg = f"{current_user}: {message_text}"
             channels[channel]["messages"].append(local_msg)
-            print(f"[ChatApp] Sending message to #{channel}: {message_text}")
-
             # Broadcast to other peers with channel context
             for peer in sorted(set(peers)):
                 # Retry sending up to 3 times with short backoff
@@ -491,7 +482,6 @@ def receive_message(headers, body):
         if message_text:
             incoming_msg = f"{user}: {message_text}"
             channels[channel]["messages"].append(incoming_msg)
-            print(f"[ChatApp] Received in #{channel}: {incoming_msg}")
     except Exception as e:
         print(f"[ChatApp] Error receiving message: {e}")
         return "HTTP/1.1 400 Bad Request\r\n\r\n"
@@ -556,14 +546,14 @@ if __name__ == "__main__":
         pass
     app.prepare_address(ip, port)
     # Auto-connect to tracker is enabled by default for non-tracker peers.
-    try:
-        if int(port) != 8000:
-            me = f"{ip}:{port}"  # Use the actual IP for registration
-            tracker_addr = f"{ip}:8000"
-            print(f"[AutoSync] Starting auto-sync thread for {me} to tracker {tracker_addr}")
-            t = threading.Thread(target=_auto_register_and_sync, args=(tracker_addr, me), daemon=True)
-            t.start()
-    except Exception as _e:
-        print(f"[AutoSync] could not start background sync: {_e}")
+    if AUTO_TRACKER == 1:
+        try:
+            if int(port) != 8000:
+                me = f"{ip}:{port}"  # Use the actual IP for registration
+                tracker_addr = f"{ip}:8000"
+                t = threading.Thread(target=_auto_register_and_sync, args=(tracker_addr, me), daemon=True)
+                t.start()
+        except Exception as _e:
+            print(f"[AutoSync] could not start background sync: {_e}")
 
     app.run()
