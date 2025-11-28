@@ -333,87 +333,90 @@ class Response():
         # 0) XỬ LÝ ĐĂNG NHẬP (Task 1A)
         #    Đặt NHÁNH NÀY LÊN TRÊN phần phục vụ file tĩnh
         # =========================
-        if request.method == "POST" and path in ("/login", "/login.html"):
-            # Lấy user/pass từ body — hỗ trợ cả JSON lẫn x-www-form-urlencoded
-            user = pw = ""
+        if path in ("/login", "/login.html"):
+            if request.method == "GET":
+                # =========================
+                # 1) PHẦN PHỤC VỤ FILE TĨNH (giữ nguyên, chỉ bổ sung image/x-icon)
+                # =========================
+                mime_type = self.get_mime_type(path)
+                print("[Response] {} path {} mime_type {}".format(request.method, request.path, mime_type))
 
-            ctype = request.headers.get("content-type", request.headers.get("Content-Type", ""))
-            if "application/json" in ctype:
-                try:
-                    import json
-                    data = json.loads(request.body or "")
-                    user = data.get("username", "")
-                    pw   = data.get("password", "")
-                except Exception:
-                    user = pw = ""
-            else:
-                # Ưu tiên dùng request.form nếu bạn đã parse ở request.py
-                frm = getattr(request, "form", {}) if isinstance(getattr(request, "form", {}), dict) else {}
-                if frm:
-                    user = frm.get("username", "")
-                    pw   = frm.get("password", "")
+                base_dir = ""
+                if path.endswith('.html') or mime_type == 'text/html':
+                    base_dir = self.prepare_content_type(mime_type='text/html')
+                elif mime_type == 'text/css':
+                    base_dir = self.prepare_content_type(mime_type='text/css')
+                elif mime_type.startswith('image/') or mime_type == 'image/x-icon':  # <--- THÊM để phục vụ favicon/ảnh
+                    base_dir = self.prepare_content_type(mime_type=mime_type)
                 else:
-                    # Fallback tự parse urlencoded
-                    from urllib.parse import parse_qs
-                    q = parse_qs(request.body or "", keep_blank_values=True)
-                    user = (q.get("username") or [""])[0]
-                    pw   = (q.get("password") or [""])[0]
+                    # Nếu bạn muốn giữ TODO, có thể trả 404 ở đây
+                    return self.build_error_response(404, "Not Found 1")
+            elif request.method == "POST":
+                # Lấy user/pass từ body — hỗ trợ cả JSON lẫn x-www-form-urlencoded
+                user = pw = ""
 
-            # Kiểm tra thông tin
-            if user == "admin" and pw == "password":
-                # Đúng: gán cookie + trả index.html
-                self.headers["Set-Cookie"] = "auth=true; Path=/; HttpOnly; SameSite=Lax"
-                print("[DEBUG] Sending Set-Cookie:", self.headers.get("Set-Cookie"))
+                ctype = request.headers.get("content-type", request.headers.get("Content-Type", ""))
+                if "application/json" in ctype:
+                    try:
+                        import json
+                        data = json.loads(request.body or "")
+                        user = data.get("username", "")
+                        pw = data.get("password", "")
+                    except Exception:
+                        user = pw = ""
+                else:
+                    # Ưu tiên dùng request.form nếu bạn đã parse ở request.py
+                    frm = getattr(request, "form", {}) if isinstance(getattr(request, "form", {}), dict) else {}
+                    if frm:
+                        user = frm.get("username", "")
+                        pw = frm.get("password", "")
+                    else:
+                        # Fallback tự parse urlencoded
+                        from urllib.parse import parse_qs
+                        q = parse_qs(request.body or "", keep_blank_values=True)
+                        user = (q.get("username") or [""])[0]
+                        pw = (q.get("password") or [""])[0]
 
-                base_dir = self.prepare_content_type(mime_type="text/html")
-                _, self._content = self.build_content("/index.html", base_dir)
+                # Kiểm tra thông tin
+                if user == "admin" and pw == "password":
+                    # Đúng: gán cookie + trả index.html
+                    self.headers["Set-Cookie"] = "auth=true; Path=/; HttpOnly; SameSite=Lax"
+                    print("[DEBUG] Sending Set-Cookie:", self.headers.get("Set-Cookie"))
 
-                # ⚠️ build_response_header của bạn phải merge self.headers
-                self._header = self.build_response_header(request)
-                return self._header + self._content
+                    base_dir = self.prepare_content_type(mime_type="text/html")
+                    _, self._content = self.build_content("/index.html", base_dir)
+
+                    # ⚠️ build_response_header của bạn phải merge self.headers
+                    self._header = self.build_response_header(request)
+                    return self._header + self._content
+                else:
+                    return self.build_error_response(401, "Invalid Username/Password")
             else:
-                return self.build_error_response(401, "Invalid Username/Password")
-
-        # =========================
-        # 1) PHẦN PHỤC VỤ FILE TĨNH (giữ nguyên, chỉ bổ sung image/x-icon)
-        # =========================
-        mime_type = self.get_mime_type(path)
-        print("[Response] {} path {} mime_type {}".format(request.method, request.path, mime_type))
-
-        base_dir = ""
-        if path.endswith('.html') or mime_type == 'text/html':
-            base_dir = self.prepare_content_type(mime_type='text/html')
-        elif mime_type == 'text/css':
-            base_dir = self.prepare_content_type(mime_type='text/css')
-        elif mime_type.startswith('image/') or mime_type == 'image/x-icon':   # <--- THÊM để phục vụ favicon/ảnh
-            base_dir = self.prepare_content_type(mime_type=mime_type)
+                return self.build_error_response(404, "Not Found 2")
         else:
-            # Nếu bạn muốn giữ TODO, có thể trả 404 ở đây
-            return self.build_error_response(404, "Not Found")
+            # =========================
+            # 2) TASK 1B: CHẶN TRUY CẬP INDEX NẾU CHƯA LOGIN (giữ nguyên logic của bạn)
+            # =========================
+            if path == "/" or path == "/index.html":
+                cookie_header = request.headers.get("cookie", "")
+                print(f"[DEBUG] Checking cookie for access control: {cookie_header}")
+                if "auth=true" not in cookie_header:
+                    print("[DEBUG] Missing or invalid cookie — unauthorized access")
+                    unauthorized_content = (
+                        b"<html><body><h1>401 Unauthorized</h1><p>You must log in first.</p></body></html>"
+                    )
+                    self._content = unauthorized_content
+                    self.headers["Content-Type"] = "text/html"
+                    self._header = (
+                        "HTTP/1.1 401 Unauthorized\r\n"
+                        f"Content-Length: {len(unauthorized_content)}\r\n"
+                        "Content-Type: text/html\r\n"
+                        "Connection: close\r\n\r\n"
+                    ).encode("utf-8")
+                    return self._header + self._content
 
-        # =========================
-        # 2) TASK 1B: CHẶN TRUY CẬP INDEX NẾU CHƯA LOGIN (giữ nguyên logic của bạn)
-        # =========================
-        if path == "/" or path == "/index.html":
-            cookie_header = request.headers.get("cookie", "")
-            print(f"[DEBUG] Checking cookie for access control: {cookie_header}")
-            if "auth=true" not in cookie_header:
-                print("[DEBUG] Missing or invalid cookie — unauthorized access")
-                unauthorized_content = (
-                    b"<html><body><h1>401 Unauthorized</h1><p>You must log in first.</p></body></html>"
-                )
-                self._content = unauthorized_content
-                self.headers["Content-Type"] = "text/html"
-                self._header = (
-                    "HTTP/1.1 401 Unauthorized\r\n"
-                    f"Content-Length: {len(unauthorized_content)}\r\n"
-                    "Content-Type: text/html\r\n"
-                    "Connection: close\r\n\r\n"
-                ).encode("utf-8")
-                return self._header + self._content
-
-        else:
-            return self.build_error_response(404, "Not Found")
+            else:
+                return self.build_error_response(404, "Not Found 4")
 
         # =========================
         # 3) ĐỌC FILE VÀ TRẢ VỀ
