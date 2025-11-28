@@ -39,7 +39,21 @@ PORT = 8000  # Default port
 
 # In-memory storage for peers and messages
 peers = []
-messages = []
+
+# Optional centralized tracker registry (used if this node is chosen as tracker)
+tracker_registry = []  # list of 'ip:port' strings
+
+# Channel-based storage
+channels = {
+    "general": {
+        "members": [],
+        "messages": []
+    }
+}
+# Active channel for this peer's UI (simple global state per process)
+active_channel = "general"
+# Username/identity for this peer
+current_user = "Anonymous"
 
 app = WeApRous()
 
@@ -130,29 +144,224 @@ def add_peer(headers, body):
         # A simple error response
         return "HTTP/1.1 400 Bad Request\r\n\r\n"
 
-    # Redirect back to the main page to refresh the UI
-    return "HTTP/1.1 302 Found\r\nLocation: /\r\n\r\n"
+@app.route('/create-channel', methods=['POST'])
+def create_channel(headers, body):
+    """Create a new channel"""
+    try:
+        parsed = parse.parse_qs(body)
+        name = parsed.get('channel', [''])[0].strip()
+        if not name:
+            return "HTTP/1.1 400 Bad Request\r\n\r\n"
+        if name not in channels:
+            channels[name] = {"members": [], "messages": []}
+            print(f"[ChatApp] Created channel: {name}")
+        return "HTTP/1.1 200 OK\r\n\r\n"
+    except Exception as e:
+        print(f"[ChatApp] Error creating channel: {e}")
+        return "HTTP/1.1 500 Internal Server Error\r\n\r\n"
+
+@app.route('/join-channel', methods=['POST'])
+def join_channel(headers, body):
+    """Join a channel and set it active"""
+    global active_channel
+    try:
+        parsed = parse.parse_qs(body)
+        name = parsed.get('channel', [''])[0].strip()
+        if not name:
+            return "HTTP/1.1 400 Bad Request\r\n\r\n"
+        if name not in channels:
+            channels[name] = {"members": [], "messages": []}
+        peer_id = f"peer:{app.port}"
+        if peer_id not in channels[name]["members"]:
+            channels[name]["members"].append(peer_id)
+        active_channel = name
+        print(f"[ChatApp] Joined channel: {name}")
+        return "HTTP/1.1 200 OK\r\n\r\n"
+    except Exception as e:
+        print(f"[ChatApp] Error joining channel: {e}")
+        return "HTTP/1.1 500 Internal Server Error\r\n\r\n"
+
+@app.route('/set-active-channel', methods=['POST'])
+def set_active_channel(headers, body):
+    """Set the active channel without changing membership"""
+    global active_channel
+    try:
+        parsed = parse.parse_qs(body)
+        name = parsed.get('channel', [''])[0].strip()
+        if not name:
+            return "HTTP/1.1 400 Bad Request\r\n\r\n"
+        if name not in channels:
+            channels[name] = {"members": [], "messages": []}
+        active_channel = name
+        print(f"[ChatApp] Active channel set to: {name}")
+        return "HTTP/1.1 200 OK\r\n\r\n"
+    except Exception as e:
+        print(f"[ChatApp] Error setting active channel: {e}")
+        return "HTTP/1.1 500 Internal Server Error\r\n\r\n"
+
+@app.route('/list-channels', methods=['GET'])
+def list_channels(headers, body):
+    """Return channel list with membership and active flags"""
+    import json
+    peer_id = f"peer:{app.port}"
+    data = []
+    for name, entry in channels.items():
+        data.append({
+            "name": name,
+            "joined": peer_id in entry.get("members", []),
+            "active": name == active_channel
+        })
+    response_body = json.dumps(data)
+    return (
+        f"HTTP/1.1 200 OK\r\n"
+        f"Content-Type: application/json\r\n"
+        f"Content-Length: {len(response_body)}\r\n"
+        f"\r\n"
+        f"{response_body}"
+    )
+
+@app.route('/set-username', methods=['POST'])
+def set_username(headers, body):
+    """Set display username for this peer."""
+    global current_user
+    try:
+        parsed = parse.parse_qs(body)
+        name = parsed.get('username', [''])[0].strip()
+        if not name:
+            return "HTTP/1.1 400 Bad Request\r\n\r\n"
+        current_user = name
+        print(f"[ChatApp] Username set to: {current_user}")
+        return "HTTP/1.1 200 OK\r\n\r\n"
+    except Exception as e:
+        print(f"[ChatApp] Error setting username: {e}")
+        return "HTTP/1.1 500 Internal Server Error\r\n\r\n"
+
+@app.route('/whoami', methods=['GET'])
+def whoami(headers, body):
+    """Return current username of this peer."""
+    import json
+    response_body = json.dumps({"user": current_user})
+    return (
+        f"HTTP/1.1 200 OK\r\n"
+        f"Content-Type: application/json\r\n"
+        f"Content-Length: {len(response_body)}\r\n\r\n{response_body}"
+    )
+
+
+
+# ================= Tracker (Centralized) APIs =================
+@app.route('/register', methods=['POST'])
+def tracker_register(headers, body):
+    """Tracker endpoint: register a peer 'ip:port'"""
+    try:
+        parsed = parse.parse_qs(body)
+        peer = parsed.get('peer', [''])[0].strip()
+        if not peer:
+            return "HTTP/1.1 400 Bad Request\r\n\r\n"
+        if peer not in tracker_registry:
+            tracker_registry.append(peer)
+            print(f"[Tracker] Registered peer: {peer}")
+        return "HTTP/1.1 200 OK\r\n\r\n"
+    except Exception as e:
+        print(f"[Tracker] Error register: {e}")
+        return "HTTP/1.1 500 Internal Server Error\r\n\r\n"
+
+
+@app.route('/tracker-peers', methods=['GET'])
+def tracker_peers(headers, body):
+    """Tracker endpoint: return registered peers"""
+    import json
+    response_body = json.dumps(tracker_registry)
+    return (
+        f"HTTP/1.1 200 OK\r\n"
+        f"Content-Type: application/json\r\n"
+        f"Content-Length: {len(response_body)}\r\n\r\n{response_body}"
+    )
+
+
+@app.route('/sync-from-tracker', methods=['POST'])
+def sync_from_tracker(headers, body):
+    """Client endpoint: fetch peers from a tracker and merge into local peers list."""
+    try:
+        parsed = parse.parse_qs(body)
+        tracker = parsed.get('tracker', [''])[0].strip()  # ip:port
+        if not tracker:
+            return "HTTP/1.1 400 Bad Request\r\n\r\n"
+        # Fetch peers
+        url = f"http://{tracker}/tracker-peers"
+        with url_request.urlopen(url, timeout=5) as r:
+            import json
+            remote_list = json.loads(r.read().decode('utf-8') or '[]')
+        # Merge
+        added = 0
+        for p in remote_list:
+            if p and p not in peers and p != f"{headers.get('host','')}":
+                peers.append(p)
+                added += 1
+        print(f"[Client] Synced {added} peers from tracker {tracker}")
+        return "HTTP/1.1 200 OK\r\n\r\n"
+    except Exception as e:
+        print(f"[Client] Error syncing peers: {e}")
+        return "HTTP/1.1 500 Internal Server Error\r\n\r\n"
+
+
+@app.route('/register-to-tracker', methods=['POST'])
+def register_to_tracker(headers, body):
+    """Client endpoint: register this peer to a tracker."""
+    try:
+        parsed = parse.parse_qs(body)
+        tracker = parsed.get('tracker', [''])[0].strip()
+        me = parsed.get('me', [''])[0].strip()
+        if not tracker:
+            return "HTTP/1.1 400 Bad Request\r\n\r\n"
+        if not me:
+            # Fallback to Host header if available
+            me = headers.get('host', '').strip()
+        if not me:
+            return "HTTP/1.1 400 Bad Request\r\n\r\n"
+        data = parse.urlencode({'peer': me}).encode()
+        req = url_request.Request(f"http://{tracker}/register", data=data, method='POST')
+        with url_request.urlopen(req, timeout=5):
+            pass
+        print(f"[Client] Registered {me} to tracker {tracker}")
+        return "HTTP/1.1 200 OK\r\n\r\n"
+    except Exception as e:
+        print(f"[Client] Error registering to tracker: {e}")
+        return "HTTP/1.1 500 Internal Server Error\r\n\r\n"
 
 
 @app.route('/send-message', methods=['POST'])
 def send_message(headers, body):
     """
-    Send a message to all known peers.
+    Send a message to all known peers (channel-aware).
     """
+    global active_channel
     try:
         parsed_body = parse.parse_qs(body)
         message_text = parsed_body.get('message', [''])[0]
+        # Allow channel override in request, fallback to current active channel
+        channel = parsed_body.get('channel', [active_channel])[0] or active_channel
+
+        if not channel:
+            channel = "general"
+        if channel not in channels:
+            # Auto-create channel if not exists
+            channels[channel] = {"members": [], "messages": []}
 
         if message_text:
-            # Add message to local list
-            messages.append(f"Me: {message_text}")
-            print(f"[ChatApp] Sending message: {message_text}")
+            # Add message to local channel
+            local_msg = f"{current_user}: {message_text}"
+            channels[channel]["messages"].append(local_msg)
+            print(f"[ChatApp] Sending message to #{channel}: {message_text}")
 
-            # Broadcast to other peers
+            # Broadcast to other peers with channel context
             for peer in peers:
                 # Retry sending up to 3 times with short backoff
-                peer_message = f"Peer ({app.port}): {message_text}"
-                data = parse.urlencode({'message': peer_message}).encode()
+                data = parse.urlencode({
+                    'message': message_text,
+                    'channel': channel,
+                    'user': current_user,
+                }).encode()
                 for attempt in range(3):
                     try:
                         req = url_request.Request(f"http://{peer}/receive-message", data=data, method='POST')
@@ -179,14 +388,21 @@ def send_message(headers, body):
 @app.route('/receive-message', methods=['POST'])
 def receive_message(headers, body):
     """
-    Receive a message from another peer.
+    Receive a message from another peer (channel-aware).
     """
     try:
         parsed_body = parse.parse_qs(body)
         message_text = parsed_body.get('message', [''])[0]
+        channel = parsed_body.get('channel', ['general'])[0] or 'general'
+        user = parsed_body.get('user', ['Peer'])[0] or 'Peer'
+
+        if channel not in channels:
+            channels[channel] = {"members": [], "messages": []}
+
         if message_text:
-            messages.append(message_text)
-            print(f"[ChatApp] Received message: {message_text}")
+            incoming_msg = f"{user}: {message_text}"
+            channels[channel]["messages"].append(incoming_msg)
+            print(f"[ChatApp] Received in #{channel}: {incoming_msg}")
     except Exception as e:
         print(f"[ChatApp] Error receiving message: {e}")
         return "HTTP/1.1 400 Bad Request\r\n\r\n"
@@ -196,10 +412,12 @@ def receive_message(headers, body):
 @app.route('/get-messages', methods=['GET'])
 def get_messages(headers, body):
     """
-    Return the list of messages as JSON.
+    Return the list of messages for the active channel as JSON.
     """
     import json
-    response_body = json.dumps(messages)
+    # Use active channel for this peer's UI
+    msgs = channels.get(active_channel, {"messages": []}).get("messages", [])
+    response_body = json.dumps(msgs)
     return (
         f"HTTP/1.1 200 OK\r\n"
         f"Content-Type: application/json\r\n"
@@ -236,5 +454,10 @@ if __name__ == "__main__":
 
     # Store the port and prepare the address
     app.port = port
+    # Set a default username to identify this peer
+    try:
+        current_user = f"peer:{port}"
+    except Exception:
+        pass
     app.prepare_address(ip, port)
     app.run()
