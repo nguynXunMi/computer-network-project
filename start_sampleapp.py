@@ -55,44 +55,6 @@ def login(headers="guest", body="anonymous"):
     :param body (str): The request body or login payload.
     """
     print ("[SampleApp] Logging in {} to {}".format(headers, body))
-    print("[DEBUG] /login called")
-    try:
-        data = json.loads(body)
-        username = data.get("username")
-        password = data.get("password")
-    except Exception:
-        return "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nInvalid request body format"
-
-    # Check credentials
-    if username == "admin" and password == "password":
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        html_path = os.path.join(base_dir, "www", "index.html")
-        try:
-            with open(html_path, "r", encoding="utf-8") as f:
-                html = f.read()
-            # Inject the current peer's port into the HTML
-            html = html.replace("{{PEER_PORT}}", str(app.port))
-        except FileNotFoundError:
-            html = "<h1>Index page not found</h1>"
-
-        return (
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: text/html\r\n"
-            "Set-Cookie: auth=true\r\n"
-            f"Content-Length: {len(html)}\r\n"
-            "Connection: close\r\n"
-            "\r\n"
-            f"{html}"
-        )
-    else:
-        unauthorized_html = "<h1>401 Unauthorized</h1><p>Invalid credentials.</p>"
-        return (
-            "HTTP/1.1 401 Unauthorized\r\n"
-            "Content-Type: text/html\r\n"
-            f"Content-Length: {len(unauthorized_html)}\r\n"
-            "\r\n"
-            f"{unauthorized_html}"
-        )
 
 @app.route('/index.html', methods=['GET'])
 def root(headers=None, body=None):

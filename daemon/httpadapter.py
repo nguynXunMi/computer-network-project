@@ -155,6 +155,9 @@ class HttpAdapter:
         print("[DEBUG] Raw HTTP message:\n", msg)
 
         if not msg:
+            print("[HttpAdapter] Error handling client {}".format(addr))
+            error_response = resp.build_error_response(400, "Bad Request")
+            conn.sendall(error_response)
             conn.close()
             return # Ignore empty requests
 
@@ -176,13 +179,18 @@ class HttpAdapter:
                 # If not a full response, set it as the body and build the response
                 resp.body = result
                 response = resp.build_response(req)
+
+            conn.sendall(response)
+
         else:
             print("[WARN] No route matched for request")
             # If no route matched, build a response (will look for static file or return 404)
             response = resp.build_response(req)
+            conn.sendall(response)
+            # error_response = resp.build_error_response(404, "Not Found")
+            # conn.sendall(error_response)
 
         #print(response)
-        conn.sendall(response)
         conn.close()
 
     def extract_cookies(self, req):

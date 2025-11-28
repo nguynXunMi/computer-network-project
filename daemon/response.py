@@ -21,6 +21,7 @@ based on incoming requests.
 The current version supports MIME type detection, content loading and header formatting
 """
 import datetime
+import json
 import os
 import mimetypes
 from .dictionary import CaseInsensitiveDict
@@ -270,26 +271,6 @@ class Response():
         self.auth = self.auth or "None"
         return str(fmt_header).encode('utf-8')
 
-
-    def build_notfound(self):
-        """
-        Constructs a standard 404 Not Found HTTP response.
-
-        :rtype bytes: Encoded 404 response.
-        """
-
-        return (
-                "HTTP/1.1 404 Not Found\r\n"
-                "Accept-Ranges: bytes\r\n"
-                "Content-Type: text/html\r\n"
-                "Content-Length: 13\r\n"
-                "Cache-Control: max-age=86000\r\n"
-                "Connection: close\r\n"
-                "\r\n"
-                "404 Not Found"
-            ).encode('utf-8')
-
-
     # def build_response(self, request):
     #     """
     #     Builds a full HTTP response including headers and content based on the request.
@@ -391,20 +372,7 @@ class Response():
                 self._header = self.build_response_header(request)
                 return self._header + self._content
             else:
-                # Sai: trả 401 (đơn giản, giữ style hiện tại của bạn)
-                unauthorized_content = (
-                    b"<!doctype html><html><body><h1>401 Unauthorized</h1>"
-                    b"<p>Invalid username or password</p></body></html>"
-                )
-                self._content = unauthorized_content
-                self.headers["Content-Type"] = "text/html"
-                self._header = (
-                    "HTTP/1.1 401 Unauthorized\r\n"
-                    f"Content-Length: {len(unauthorized_content)}\r\n"
-                    "Content-Type: text/html\r\n"
-                    "Connection: close\r\n\r\n"
-                ).encode("utf-8")
-                return self._header + self._content
+                return self.build_error_response(401, "Invalid Username/Password")
 
         # =========================
         # 1) PHẦN PHỤC VỤ FILE TĨNH (giữ nguyên, chỉ bổ sung image/x-icon)
@@ -421,7 +389,7 @@ class Response():
             base_dir = self.prepare_content_type(mime_type=mime_type)
         else:
             # Nếu bạn muốn giữ TODO, có thể trả 404 ở đây
-            return self.build_notfound()
+            return self.build_error_response(404, "Not Found")
 
         # =========================
         # 2) TASK 1B: CHẶN TRUY CẬP INDEX NẾU CHƯA LOGIN (giữ nguyên logic của bạn)
@@ -444,9 +412,42 @@ class Response():
                 ).encode("utf-8")
                 return self._header + self._content
 
+        else:
+            return self.build_error_response(404, "Not Found")
+
         # =========================
         # 3) ĐỌC FILE VÀ TRẢ VỀ
         # =========================
         c_len, self._content = self.build_content(path, base_dir)
         self._header = self.build_response_header(request)
         return self._header + self._content
+
+    def build_error_response(self, status_code, message):
+        """
+        Build error response for various status codes.
+
+        Supports: 400, 401, 404, 500
+        """
+        status_map = {
+            400: "Bad Request",
+            401: "Unauthorized",
+            404: "Not Found",
+            500: "Internal Server Error"
+        }
+
+        status_text = status_map.get(status_code, "Error")
+
+        # Build JSON error body
+        error_body = {"error": message, "status": status_code}
+        response_body = json.dumps(error_body).encode('utf-8')
+
+        # Build HTTP response
+        status_line = "HTTP/1.1 {} {}\r\n".format(status_code, status_text)
+        headers = "Content-Type: application/json\r\n"
+        headers += "Content-Length: {}\r\n\r\n".format(len(response_body))
+
+        print("[Response] Error response: status={}, message={}".format(status_code, message))
+
+        response = status_line + headers
+
+        return response.encode('utf-8') + response_body
