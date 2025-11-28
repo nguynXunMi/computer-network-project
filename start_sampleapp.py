@@ -98,8 +98,6 @@ def _auto_register_and_sync(tracker, me):
                 req = url_request.Request(f"http://{tracker_norm}/register", data=data, method='POST')
                 with url_request.urlopen(req, timeout=5):
                     pass
-                print(f"[AutoSync] Registered {me_norm} to tracker {tracker_norm}")
-
             # 2. Sync peer list from tracker
             with url_request.urlopen(f"http://{tracker_norm}/tracker-peers", timeout=5) as r:
                 import json as _json
@@ -411,9 +409,8 @@ def register_to_tracker(headers, body):
         print(f"[Client] Error registering to tracker: {e}")
         return "HTTP/1.1 500 Internal Server Error\r\n\r\n"
 
-
 @app.route('/send-message', methods=['POST'])
-def send_message(headers, body):
+def send_message(_, body):
     """
     Send a message to all known peers (channel-aware).
     """
@@ -459,14 +456,34 @@ def send_message(headers, body):
 
     except Exception as e:
         print(f"[ChatApp] Error sending message: {e}")
-        return "HTTP/1.1 400 Bad Request\r\n\r\n"
 
-    # Redirect back to the main page
-    return "HTTP/1.1 302 Found\r\nLocation: /\r\n\r\n"
-
+# ----- Direct peer communication (no tracker in path) -----
+@app.route('/send-peer', methods=['POST'])
+def send_peer(_, body):
+    """Send a message directly to a single peer address (ip:port)."""
+    try:
+        parsed = parse.parse_qs(body)
+        target = normalize_peer(parsed.get('peer', [''])[0])
+        message_text = parsed.get('message', [''])[0]
+        channel = parsed.get('channel', [active_channel])[0] or active_channel or 'general'
+        if not target or not message_text:
+            return "HTTP/1.1 400 Bad Request\r\n\r\n"
+        # Ensure local channel exists and store local copy for the sender as well
+        if channel not in channels:
+            channels[channel] = {"members": [], "messages": []}
+        channels[channel]["messages"].append(f"{current_user}: {message_text}")
+        # Deliver directly to the peer
+        data = parse.urlencode({'message': message_text, 'channel': channel, 'user': current_user}).encode()
+        req = url_request.Request(f"http://{target}/receive-message", data=data, method='POST')
+        with url_request.urlopen(req, timeout=5):
+            pass
+        return "HTTP/1.1 200 OK\r\n\r\n"
+    except Exception as e:
+        print(f"[ChatApp] Error send-peer: {e}")
+        return "HTTP/1.1 500 Internal Server Error\r\n\r\n"
 
 @app.route('/receive-message', methods=['POST'])
-def receive_message(headers, body):
+def receive_message(_, body):
     """
     Receive a message from another peer (channel-aware).
     """
