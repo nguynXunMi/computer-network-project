@@ -526,6 +526,22 @@ def get_peers(headers, body):
         f"{response_body}"
     )
 
+
+@app.route('/get-peers', methods=['GET'])
+def get_peers(headers, body):
+    """
+    Return the list of peers as JSON.
+    """
+    import json
+    response_body = json.dumps(peers)
+    return (
+        f"HTTP/1.1 200 OK\r\n"
+        f"Content-Type: application/json\r\n"
+        f"Content-Length: {len(response_body)}\r\n"
+        f"\r\n"
+        f"{response_body}"
+    )
+
 if __name__ == "__main__":
     # Parse command-line arguments to configure server IP and port
     parser = argparse.ArgumentParser(prog='Backend', description='', epilog='Beckend daemon')
