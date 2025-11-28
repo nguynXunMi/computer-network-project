@@ -10,74 +10,68 @@
 </head>
 
 <body>
-<div>
+<div class="hero">
     <h1>bksysnet@hcmut  Domain</h1>
     <p>This domain is for use in illustrative examples in documents.</p>
-    <img src="images/welcome.png" alt="bksysnet at HCMUT" width="500" height="600">
+    <img src="static/images/welcome.png" alt="bksysnet at HCMUT" width="500" height="600">
 </div>
 
 <!-- Chat Application -->
-<div>
+<div class="container">
     <h1>P2P Chat (Peer: {{PEER_PORT}}) - User: <span id="whoami">Anonymous</span></h1>
 
-    <div>
-        <h2>Messages</h2>
-        <div id="messages" style="border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll;">
+    <div class="card">
+        <h2>Messages <small id="active-channel-name" style="color:#6b7280"># general</small></h2>
+        <div id="messages" style="border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; background:#fff;">
             <!-- Messages will be loaded here -->
         </div>
     </div>
 
-    <div>
+    <div class="card">
         <h2>Send a message</h2>
-        <form id="send-message-form">
+        <form id="send-message-form" class="inline-form">
             <input type="text" id="message-input" name="message" size="50" autocomplete="off"/>
-            <input type="submit" value="Send"/>
+            <button type="submit" class="btn">Send</button>
         </form>
     </div>
 
-    <div>
+    <div class="card">
         <h2>Peers</h2>
-        <ul id="peer-list" style="list-style-type: none; padding: 0;">
+        <ul id="peer-list" class="list-inline">
             <!-- Peers will be loaded here -->
         </ul>
-        <form id="add-peer-form">
-            <input type="text" id="peer-input" name="peer" placeholder="ip:port" autocomplete="off"/>
-            <input type="submit" value="Add Peer"/>
+        <form id="add-peer-form" class="inline-form">
+            <input type="text" id="peer-input" name="peer" placeholder="ip:port (e.g., 127.0.0.1:8002)" autocomplete="off"/>
+            <button type="submit" class="btn">Add Peer</button>
         </form>
     </div>
 
-    <div>
+    <div class="card">
         <h2>Channels</h2>
-        <ul id="channel-list" style="list-style-type: none; padding: 0;"></ul>
-        <form id="create-channel-form" style="margin-top:8px;">
-            <input type="text" id="channel-create-input" name="channel" placeholder="channel name" autocomplete="off"/>
-            <input type="submit" value="Create"/>
+        <div id="channel-list" class="channel-pills"></div>
+        <form id="create-channel-form" class="inline-form" style="margin-top:8px;">
+            <input type="text" id="channel-create-input" name="channel" placeholder="New channel name" autocomplete="off"/>
+            <button type="submit" class="btn">Create</button>
         </form>
-        <form id="join-channel-form" style="margin-top:8px;">
-            <input type="text" id="channel-join-input" name="channel" placeholder="channel to join" autocomplete="off"/>
-            <input type="submit" value="Join"/>
-        </form>
+        <small>Tip: click a channel to switch. If you haven’t joined, clicking will auto-join.</small>
     </div>
 
-    <div>
+    <div class="card">
         <h2>Identity</h2>
-        <form id="username-form">
+        <form id="username-form" class="inline-form">
             <input type="text" id="username-input" name="username" placeholder="your name" autocomplete="off"/>
-            <input type="submit" value="Set Username"/>
+            <button type="submit" class="btn">Set Username</button>
         </form>
     </div>
 
-    <div>
+    <div class="card" id="tracker-card">
         <h2>Tracker</h2>
-        <form id="register-tracker-form" style="margin-top:8px;">
-            <input type="text" id="tracker-register-input" name="tracker" placeholder="tracker ip:port"/>
-            <input type="text" id="tracker-me-input" name="me" placeholder="me (optional ip:port)"/>
-            <input type="submit" value="Register to Tracker"/>
+        <form id="connect-tracker-form" class="inline-form" style="margin-top:8px;">
+            <input type="text" id="tracker-connect-input" name="tracker" placeholder="tracker ip:port (e.g., 127.0.0.1:8000)" value="{{TRACKER_ADDR}}"/>
+            <input type="hidden" id="tracker-me-hidden" name="me" value="{{PEER_ADDR}}"/>
+            <button type="submit" class="btn">Connect Tracker</button>
         </form>
-        <form id="sync-tracker-form" style="margin-top:8px;">
-            <input type="text" id="tracker-sync-input" name="tracker" placeholder="tracker ip:port"/>
-            <input type="submit" value="Sync Peers from Tracker"/>
-        </form>
+        <small>Connect = Register to tracker + Sync peers</small>
     </div>
 </div>
 
@@ -136,16 +130,45 @@
     let activeChannel = 'general';
 
     function renderChannels(list) {
-        const ul = document.getElementById('channel-list');
-        ul.innerHTML = list.map(ch => {
-            const bold = ch.active ? 'style="font-weight:bold;"' : '';
-            return `<li><button data-name="${ch.name}" ${bold}># ${ch.name} ${ch.joined ? '' : '(not joined)'}</button></li>`;
-        }).join('');
+        // Sort: active first, then joined, then alphabetical
+        list = list.slice().sort((a,b) => {
+            if (a.active && !b.active) return -1;
+            if (!a.active && b.active) return 1;
+            if (a.joined && !b.joined) return -1;
+            if (!a.joined && b.joined) return 1;
+            return a.name.localeCompare(b.name);
+        });
 
-        ul.querySelectorAll('button').forEach(btn => {
+        const container = document.getElementById('channel-list');
+        container.innerHTML = list.map(ch => {
+            const classes = ['btn','btn-outline','btn-sm'];
+            let suffix = '';
+            if (ch.active) { classes.push('btn-active'); suffix = ' <span class="badge badge-here">here</span>'; }
+            else if (ch.joined) { suffix = ' <span class="badge">joined</span>'; }
+            else { suffix = ' <span class="badge">join</span>'; }
+            return `<button class="${classes.join(' ')}" data-name="${ch.name}" data-joined="${ch.joined ? '1':'0'}"># ${ch.name}${suffix}</button>`;
+        }).join(' ');
+
+        // Click to switch channel. If not joined, auto-join then switch.
+        container.querySelectorAll('button').forEach(btn => {
             btn.addEventListener('click', () => {
                 const name = btn.getAttribute('data-name');
-                setActiveChannel(name);
+                const joined = btn.getAttribute('data-joined') === '1';
+                if (!joined) {
+                    const formData = new URLSearchParams();
+                    formData.append('channel', name);
+                    fetch('/join-channel', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: formData
+                    }).then(() => {
+                        setActiveChannel(name);
+                        fetchChannels();
+                        fetchMessages();
+                    });
+                } else {
+                    setActiveChannel(name);
+                }
             });
         });
     }
@@ -156,6 +179,8 @@
             .then(list => {
                 const active = list.find(c => c.active);
                 if (active) activeChannel = active.name; else activeChannel = 'general';
+                const label = document.getElementById('active-channel-name');
+                if (label) label.textContent = `# ${activeChannel}`;
                 renderChannels(list);
             });
     }
@@ -192,22 +217,7 @@
         });
     });
 
-    document.getElementById('join-channel-form').addEventListener('submit', function (e) {
-        e.preventDefault();
-        const name = document.getElementById('channel-join-input').value.trim();
-        if (!name) return;
-        const formData = new URLSearchParams();
-        formData.append('channel', name);
-        fetch('/join-channel', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: formData
-        }).then(() => {
-            document.getElementById('channel-join-input').value = '';
-            fetchChannels();
-            fetchMessages();
-        });
-    });
+    // Auto-join is handled when user clicks a channel pill; no standalone join form anymore.
 
     // --- Handle sending messages asynchronously ---
     document.getElementById('send-message-form').addEventListener('submit', function(event) {
@@ -262,40 +272,35 @@
         });
     });
 
-    // --- Tracker integration ---
-    document.getElementById('register-tracker-form').addEventListener('submit', function (e) {
-        e.preventDefault();
-        const tracker = document.getElementById('tracker-register-input').value.trim();
-        const me = document.getElementById('tracker-me-input').value.trim();
-        if (!tracker) return;
-        const fd = new URLSearchParams();
-        fd.append('tracker', tracker);
-        if (me) fd.append('me', me);
-        fetch('/register-to-tracker', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: fd
-        }).then(res => {
-            if (!res.ok) alert('Register to tracker failed');
-            else fetchPeers();
-        });
-    });
+    // --- Tracker integration (manual trigger; backend auto-connect is enabled) ---
+    const DEFAULT_TRACKER = '{{TRACKER_ADDR}}';
 
-    document.getElementById('sync-tracker-form').addEventListener('submit', function (e) {
-        e.preventDefault();
-        const tracker = document.getElementById('tracker-sync-input').value.trim();
-        if (!tracker) return;
-        const fd = new URLSearchParams();
-        fd.append('tracker', tracker);
-        fetch('/sync-from-tracker', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: fd
-        }).then(res => {
-            if (!res.ok) alert('Sync failed');
-            else fetchPeers();
+    function connectTracker(tracker) {
+        const me = document.getElementById('tracker-me-hidden').value.trim();
+        const reg = new URLSearchParams();
+        reg.append('tracker', tracker);
+        reg.append('me', me);
+        return fetch('/register-to-tracker', {
+            method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: reg
+        }).then(() => {
+            const fd = new URLSearchParams();
+            fd.append('tracker', tracker);
+            return fetch('/sync-from-tracker', {
+                method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: fd
+            });
+        }).then(() => {
+            fetchPeers();
         });
-    });
+    }
+
+    const connectForm = document.getElementById('connect-tracker-form');
+    if (connectForm) {
+        connectForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const tracker = document.getElementById('tracker-connect-input').value.trim() || DEFAULT_TRACKER;
+            connectTracker(tracker).catch(() => alert('Tracker connect failed'));
+        });
+    }
 </script>
 
 </body>

@@ -26,8 +26,49 @@ a:link, a:visited {
 	text-align: center;
 }
 img {
-	max-width: 100%;  
+	max-width: 100%;
 	height: auto;
 	border-radius: 8px;
 	margin-top: 20px;
 }
+
+
+/* --- Enhanced UI for Chat App --- */
+:root{
+  --bg:#f5f7fb; --panel:#ffffff; --text:#1f2937; --muted:#6b7280;
+  --primary:#2563eb; --primary-600:#1d4ed8; --border:#e5e7eb;
+}
+*{box-sizing:border-box}
+
+.container{max-width:980px;margin:24px auto;padding:16px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,0.04)}
+
+h1{font-size:22px;margin:0 0 12px}
+h2{font-size:16px;margin:0 0 12px;color:var(--muted)}
+
+.inline-form{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.inline-form input[type="text"],
+.inline-form input[type="password"],
+.inline-form input[type="search"]{padding:10px 12px;border:1px solid var(--border);border-radius:8px;min-width:260px}
+.btn{background:var(--primary);color:#fff;border:0;padding:10px 14px;border-radius:8px;cursor:pointer}
+.btn:hover{background:var(--primary-600)}
+
+.btn-outline{background:#fff;color:var(--primary);border:1px solid var(--primary)}
+.btn-outline:hover{background:rgba(37,99,235,0.06)}
+.btn-sm{padding:6px 10px;font-size:12px;border-radius:8px}
+.btn-active{background:var(--primary);color:#fff;border-color:var(--primary)}
+
+.badge{display:inline-block;padding:2px 6px;font-size:10px;font-weight:600;line-height:1;text-align:center;white-space:nowrap;vertical-align:baseline;border-radius:.25rem;color:#fff;background-color:#6b7280}
+.badge-here{background-color:var(--primary)}
+
+.list-inline{list-style:none;padding:0;margin:0;display:flex;gap:8px;flex-wrap:wrap}
+.list-inline li{background:#f3f4f6;border:1px solid var(--border);border-radius:999px;padding:6px 10px}
+
+.channel-pills{display:flex;gap:8px;flex-wrap:wrap}
+.pill{display:inline-block;padding:8px 12px;border:1px solid var(--border);border-radius:999px;cursor:pointer;background:#f9fafb}
+.pill.joined{background:#eef2ff;border-color:#c7d2fe}
+.pill.active{background:#dbeafe;border-color:#93c5fd}
+
+#messages{background:#fff}
+.hidden{display:none}
+
