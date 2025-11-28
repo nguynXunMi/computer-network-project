@@ -10,41 +10,76 @@
 </head>
 
 <body>
-<div>
+<div class="hero">
     <h1>bksysnet@hcmut  Domain</h1>
-    <p>This domain is for use in illustrative examples in documents.
-    </p>
-  
-       <img src="images/welcome.png" alt="bksysnet at HCMUT" width="500" height="600">  
+    <p>This domain is for use in illustrative examples in documents.</p>
+    <img src="static/images/welcome.png" alt="bksysnet at HCMUT" width="500" height="600">
 </div>
 
 <!-- Chat Application -->
-<div>
-    <h1>P2P Chat (You are on Peer: {{PEER_PORT}})</h1>
-    <div>
-        <h2>Messages</h2>
-        <div id="messages" style="border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll;">
+<div class="container">
+    <h1>P2P Chat (Peer: {{PEER_PORT}}) - User: <span id="whoami">Anonymous</span></h1>
+
+    <div class="card">
+        <h2>Messages <small id="active-channel-name" style="color:#6b7280"># general</small></h2>
+        <div id="messages" style="border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; background:#fff;">
             <!-- Messages will be loaded here -->
         </div>
     </div>
-    <div>
+
+    <div class="card">
         <h2>Send a message</h2>
-        <form id="send-message-form">
+        <form id="send-message-form" class="inline-form">
             <input type="text" id="message-input" name="message" size="50" autocomplete="off"/>
-            <input type="submit" value="Send"/>
+            <button type="submit" class="btn">Send</button>
         </form>
     </div>
-    <div>
+
+    <div class="card">
         <h2>Peers</h2>
-        <ul id="peer-list" style="list-style-type: none; padding: 0;">
+        <ul id="peer-list" class="list-inline">
             <!-- Peers will be loaded here -->
         </ul>
-        <form id="add-peer-form">
-            <input type="text" id="peer-input" name="peer" placeholder="ip:port" autocomplete="off"/>
-            <input type="submit" value="Add Peer"/>
+        <form id="add-peer-form" class="inline-form">
+            <input type="text" id="peer-input" name="peer" placeholder="ip:port (e.g., 127.0.0.1:8002)" autocomplete="off"/>
+            <button type="submit" class="btn">Add Peer</button>
         </form>
     </div>
+
+    <div class="card">
+        <h2>Channels</h2>
+        <div id="channel-list" class="channel-pills"></div>
+        <form id="create-channel-form" class="inline-form" style="margin-top:8px;">
+            <input type="text" id="channel-create-input" name="channel" placeholder="New channel name" autocomplete="off"/>
+            <button type="submit" class="btn">Create</button>
+        </form>
+        <small>Tip: click a channel to switch. If you haven’t joined, clicking will auto-join.</small>
+    </div>
+
+    <div class="card">
+        <h2>Identity</h2>
+        <form id="username-form" class="inline-form">
+            <input type="text" id="username-input" name="username" placeholder="your name" autocomplete="off"/>
+            <button type="submit" class="btn">Set Username</button>
+        </form>
+    </div>
+
+    <div class="card" id="tracker-card">
+        <h2>Tracker</h2>
+        <form id="connect-tracker-form" class="inline-form" style="margin-top:8px;">
+            <input type="text" id="tracker-connect-input" name="tracker" placeholder="tracker ip:port (e.g., 127.0.0.1:8000)" value="{{TRACKER_ADDR}}"/>
+            <input type="hidden" id="tracker-me-hidden" name="me" value="{{PEER_ADDR}}"/>
+            <button type="submit" class="btn">Connect Tracker</button>
+        </form>
+        <small>Connect = Register to tracker + Sync peers</small>
+    </div>
 </div>
+    <!--
+      Frontend for simple P2P chat demo
+      - Shows messages, peers, channels
+      - Backend auto-registers peers to tracker; this page mainly polls backend APIs
+    -->
+
 
 <script>
     // --- Fetch messages periodically ---
@@ -60,38 +95,6 @@
     setInterval(fetchMessages, 2000);
     fetchMessages();
 
-    // --- Handle adding peers asynchronously ---
-    document.getElementById('add-peer-form').addEventListener('submit', function(event) {
-        event.preventDefault(); // Stop page reload
-
-        const peerInput = document.getElementById('peer-input');
-        const peer = peerInput.value;
-
-        if (peer.trim() === '') {
-            return;
-        }
-
-        const formData = new URLSearchParams();
-        formData.append('peer', peer);
-
-        fetch('/add-peer', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: formData
-        }).then(response => {
-            if (response.ok) {
-                peerInput.value = ''; // Clear input field
-                fetchPeers(); // Immediately fetch new peer list
-            } else {
-                alert('Failed to add peer.');
-            }
-        }).catch(error => {
-            console.error('Error adding peer:', error);
-        });
-    });
-
     // --- Fetch peers periodically ---
     function fetchPeers() {
         fetch('/get-peers')
@@ -101,40 +104,209 @@
                 peerList.innerHTML = data.map(peer => `<li>${peer}</li>`).join('');
             });
     }
-    setInterval(fetchPeers, 5000); // Fetch every 5 seconds
+    setInterval(fetchPeers, 5000);
     fetchPeers();
 
-    // --- Handle sending messages asynchronously ---
-    document.getElementById('send-message-form').addEventListener('submit', function(event) {
-        event.preventDefault(); // Stop page reload
+    // --- Handle adding peers asynchronously ---
+    document.getElementById('add-peer-form').addEventListener('submit', function(event) {
+        event.preventDefault();
+        const peerInput = document.getElementById('peer-input');
+        const peer = peerInput.value;
 
-        const messageInput = document.getElementById('message-input');
-        const message = messageInput.value;
-
-        if (message.trim() === '') {
-            return; // Don't send empty messages
-        }
+        if (peer.trim() === '') return;
 
         const formData = new URLSearchParams();
-        formData.append('message', message);
+        formData.append('peer', peer);
 
-        fetch('/send-message', {
+        fetch('/add-peer', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: formData
         }).then(response => {
             if (response.ok) {
-                messageInput.value = ''; // Clear input field
-                fetchMessages(); // Immediately fetch new messages
+                peerInput.value = '';
+                fetchPeers();
+            } else {
+                alert('Failed to add peer.');
+            }
+        }).catch(error => console.error('Error adding peer:', error));
+    });
+
+    // --- Channels ---
+    let activeChannel = 'general';
+
+    function renderChannels(list) {
+        // Sort: active first, then joined, then alphabetical
+        list = list.slice().sort((a,b) => {
+            if (a.active && !b.active) return -1;
+            if (!a.active && b.active) return 1;
+            if (a.joined && !b.joined) return -1;
+            if (!a.joined && b.joined) return 1;
+            return a.name.localeCompare(b.name);
+        });
+
+        const container = document.getElementById('channel-list');
+        container.innerHTML = list.map(ch => {
+            const classes = ['btn','btn-outline','btn-sm'];
+            let suffix = '';
+            if (ch.active) { classes.push('btn-active'); suffix = ' <span class="badge badge-here">here</span>'; }
+            else if (ch.joined) { suffix = ' <span class="badge">joined</span>'; }
+            else { suffix = ' <span class="badge">join</span>'; }
+            return `<button class="${classes.join(' ')}" data-name="${ch.name}" data-joined="${ch.joined ? '1':'0'}"># ${ch.name}${suffix}</button>`;
+        }).join(' ');
+
+        // Click to switch channel. If not joined, auto-join then switch.
+        container.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const name = btn.getAttribute('data-name');
+                const joined = btn.getAttribute('data-joined') === '1';
+                if (!joined) {
+                    const formData = new URLSearchParams();
+                    formData.append('channel', name);
+                    fetch('/join-channel', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: formData
+                    }).then(() => {
+                        setActiveChannel(name);
+                        fetchChannels();
+                        fetchMessages();
+                    });
+                } else {
+                    setActiveChannel(name);
+                }
+            });
+        });
+    }
+
+    function fetchChannels() {
+        fetch('/list-channels')
+            .then(r => r.json())
+            .then(list => {
+                const active = list.find(c => c.active);
+                if (active) activeChannel = active.name; else activeChannel = 'general';
+                const label = document.getElementById('active-channel-name');
+                if (label) label.textContent = `# ${activeChannel}`;
+                renderChannels(list);
+            });
+    }
+    setInterval(fetchChannels, 4000);
+    fetchChannels();
+
+    function setActiveChannel(name) {
+        const formData = new URLSearchParams();
+        formData.append('channel', name);
+        fetch('/set-active-channel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: formData
+        }).then(() => {
+            activeChannel = name;
+            fetchChannels();
+            fetchMessages();
+        });
+    }
+
+    document.getElementById('create-channel-form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        const name = document.getElementById('channel-create-input').value.trim();
+        if (!name) return;
+        const formData = new URLSearchParams();
+        formData.append('channel', name);
+        fetch('/create-channel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: formData
+        }).then(() => {
+            document.getElementById('channel-create-input').value = '';
+            fetchChannels();
+        });
+    });
+
+    // Auto-join is handled when user clicks a channel pill; no standalone join form anymore.
+
+    // --- Handle sending messages asynchronously ---
+    document.getElementById('send-message-form').addEventListener('submit', function(event) {
+        event.preventDefault();
+        const messageInput = document.getElementById('message-input');
+        const message = messageInput.value;
+
+        if (message.trim() === '') return;
+
+        const formData = new URLSearchParams();
+        formData.append('message', message);
+        formData.append('channel', activeChannel);
+
+        fetch('/send-message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: formData
+        }).then(response => {
+            if (response.ok) {
+                messageInput.value = '';
+                fetchMessages();
             } else {
                 alert('Failed to send message.');
             }
-        }).catch(error => {
-            console.error('Error sending message:', error);
+        }).catch(error => console.error('Error sending message:', error));
+    });
+
+    // --- Identity (username) ---
+    function fetchWhoAmI() {
+        fetch('/whoami')
+            .then(r => r.json())
+            .then(obj => {
+                const el = document.getElementById('whoami');
+                if (el) el.textContent = obj.user || 'Anonymous';
+            });
+    }
+    fetchWhoAmI();
+
+    document.getElementById('username-form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        const name = document.getElementById('username-input').value.trim();
+        if (!name) return;
+        const fd = new URLSearchParams();
+        fd.append('username', name);
+        fetch('/set-username', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: fd
+        }).then(() => {
+            fetchWhoAmI();
+            document.getElementById('username-input').value = '';
         });
     });
+
+    // --- Tracker integration (manual trigger; backend auto-connect is enabled) ---
+    const DEFAULT_TRACKER = '{{TRACKER_ADDR}}';
+
+    function connectTracker(tracker) {
+        const me = document.getElementById('tracker-me-hidden').value.trim();
+        const reg = new URLSearchParams();
+        reg.append('tracker', tracker);
+        reg.append('me', me);
+        return fetch('/register-to-tracker', {
+            method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: reg
+        }).then(() => {
+            const fd = new URLSearchParams();
+            fd.append('tracker', tracker);
+            return fetch('/sync-from-tracker', {
+                method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: fd
+            });
+        }).then(() => {
+            fetchPeers();
+        });
+    }
+
+    const connectForm = document.getElementById('connect-tracker-form');
+    if (connectForm) {
+        connectForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const tracker = document.getElementById('tracker-connect-input').value.trim() || DEFAULT_TRACKER;
+            connectTracker(tracker).catch(() => alert('Tracker connect failed'));
+        });
+    }
 </script>
 
 </body>
