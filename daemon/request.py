@@ -74,8 +74,10 @@ class Request():
 
             if path == '/':
                 path = '/index.html'
+            elif path == "/login":
+                path = "/login.html"
         except Exception:
-            return None, None
+            return None, None, None
 
         return method, path, version
              
@@ -137,21 +139,26 @@ class Request():
         return
 
     def prepare_body(self, data, files, json=None):
-        self.prepare_content_length(self.body)
-        self.body = body
-        #
-        # TODO prepare the request authentication
-        #
-	# self.auth = ...
-        return
-
+        if json is not None:
+            import json as _json
+            self.body = _json.dumps(json)
+            self.headers["Content-Type"] = "application/json"
+        elif isinstance(data, dict):
+            from urllib.parse import urlencode
+            self.body = urlencode(data)
+            self.headers["Content-Type"] = "application/x-www-form-urlencoded"
+        else:
+            # Raw body (string)
+            self.body = self.body or ""
+            # Update content length
+            self.prepare_content_length(self.body)
 
     def prepare_content_length(self, body):
-        self.headers["Content-Length"] = "0"
-        #
-        # TODO prepare the request authentication
-        #
-	# self.auth = ...
+        if body is None:
+            length = 0
+        else:
+            length = len(body.encode("utf-8")) if isinstance(body, str) else len(body)
+        self.headers["Content-Length"] = str(length)
         return
 
 

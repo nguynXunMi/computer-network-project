@@ -33,6 +33,11 @@ from .response import *
 from .httpadapter import HttpAdapter
 from .dictionary import CaseInsensitiveDict
 
+# --- Stateful Round-Robin for Sticky Sessions ---
+# This ensures different clients are assigned to different backends sequentially.
+sticky_sessions = {}
+last_assigned_index = -1
+
 #: A dictionary mapping hostnames to backend IP and port tuples.
 #: Used to determine routing targets for incoming requests.
 PROXY_PASS = {
@@ -78,7 +83,7 @@ def forward_request(host, port, request):
         ).encode('utf-8')
 
 
-def resolve_routing_policy(hostname, routes):
+def resolve_routing_policy(hostname, routes, addr):
     """
     Handles an routing policy to return the matching proxy_pass.
     It determines the target backend to forward the request to.
@@ -110,15 +115,35 @@ def resolve_routing_policy(hostname, routes):
             except Exception:
                 return b"HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/html\r\n\r\n<h1>502 Bad Gateway</h1>"
 
-        elif len(value) == 1:
+        elif len(proxy_map) == 1:
             proxy_host, proxy_port = proxy_map[0].split(":", 2)
         #elif: # apply the policy handling 
         #   proxy_map
         #   policy
         else:
-            # Out-of-handle mapped host
-            proxy_host = '127.0.0.1'
-            proxy_port = '9000'
+            # --- Sticky Session Logic based on Client IP ---
+            # The 'addr' tuple (ip, port) is needed here. Let's modify handle_client to pass it.
+            # For now, we'll implement the logic assuming we have the client_ip.
+            # This will be fixed by modifying the call in handle_client.
+
+            # This part of the code is called from handle_client, which has the client's address.
+            # We need to pass the client's address to this function.
+            # Let's refactor: resolve_routing_policy will now take 'addr' as an argument.
+
+            # The logic will be: if the client IP is already in our sticky_sessions map, use that backend.
+            # If not, assign one using a simple hash and store it.
+            client_ip = addr[0]
+            if client_ip in sticky_sessions:
+                selected_backend = sticky_sessions[client_ip]
+            else:
+                # Assign the next backend in a round-robin fashion and remember it
+                global last_assigned_index
+                last_assigned_index = (last_assigned_index + 1) % len(proxy_map)
+                selected_backend = proxy_map[last_assigned_index]
+                sticky_sessions[client_ip] = selected_backend
+                print(f"[Proxy] New sticky session: {client_ip} -> {selected_backend}")
+
+            proxy_host, proxy_port = selected_backend.split(":", 2)
     else:
         print("[Proxy] resolve route of hostname {} is a singulair to".format(hostname))
         proxy_host, proxy_port = proxy_map.split(":", 2)
@@ -155,7 +180,7 @@ def handle_client(ip, port, conn, addr, routes):
 
     # Resolve the matching destination in routes and need conver port
     # to integer value
-    resolved_host, resolved_port = resolve_routing_policy(hostname, routes)
+    resolved_host, resolved_port = resolve_routing_policy(hostname, routes, addr)
     try:
         resolved_port = int(resolved_port)
     except ValueError:

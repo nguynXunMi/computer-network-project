@@ -29,6 +29,7 @@ import json
 import socket
 import argparse
 import os
+import time
 
 
 from daemon.weaprous import WeApRous
@@ -54,42 +55,6 @@ def login(headers="guest", body="anonymous"):
     :param body (str): The request body or login payload.
     """
     print ("[SampleApp] Logging in {} to {}".format(headers, body))
-    print("[DEBUG] /login called")
-    try:
-        data = json.loads(body)
-        username = data.get("username")
-        password = data.get("password")
-    except Exception:
-        return "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nInvalid request body format"
-
-    # Check credentials
-    if username == "admin" and password == "password":
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        html_path = os.path.join(base_dir, "www", "index.html")
-        try:
-            with open(html_path, "r", encoding="utf-8") as f:
-                html = f.read()
-        except FileNotFoundError:
-            html = "<h1>Index page not found</h1>"
-
-        return (
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: text/html\r\n"
-            "Set-Cookie: auth=true\r\n"
-            f"Content-Length: {len(html)}\r\n"
-            "Connection: close\r\n"
-            "\r\n"
-            f"{html}"
-        )
-    else:
-        unauthorized_html = "<h1>401 Unauthorized</h1><p>Invalid credentials.</p>"
-        return (
-            "HTTP/1.1 401 Unauthorized\r\n"
-            "Content-Type: text/html\r\n"
-            f"Content-Length: {len(unauthorized_html)}\r\n"
-            "\r\n"
-            f"{unauthorized_html}"
-        )
 
 @app.route('/index.html', methods=['GET'])
 def root(headers=None, body=None):
@@ -111,6 +76,8 @@ def root(headers=None, body=None):
         try:
             with open(html_path, "r", encoding="utf-8") as f:
                 html = f.read()
+            # Inject the current peer's port into the HTML
+            html = html.replace("{{PEER_PORT}}", str(app.port))
         except FileNotFoundError:
             html = "<h1>Index page not found</h1>"
 
@@ -183,17 +150,23 @@ def send_message(headers, body):
 
             # Broadcast to other peers
             for peer in peers:
-                try:
-                    # Prepare the message to be sent to the peer
-                    peer_message = f"Peer ({socket.gethostname()}): {message_text}"
-                    data = parse.urlencode({'message': peer_message}).encode()
-
-                    req = url_request.Request(f"http://{peer}/receive-message", data=data, method='POST')
-                    with url_request.urlopen(req, timeout=2) as response:
-                        if response.status != 200:
-                            print(f"[ChatApp] Error sending to peer {peer}: Status {response.status}")
-                except Exception as e:
-                    print(f"[ChatApp] Could not send message to peer {peer}: {e}")
+                # Retry sending up to 3 times with short backoff
+                peer_message = f"Peer ({app.port}): {message_text}"
+                data = parse.urlencode({'message': peer_message}).encode()
+                for attempt in range(3):
+                    try:
+                        req = url_request.Request(f"http://{peer}/receive-message", data=data, method='POST')
+                        with url_request.urlopen(req, timeout=5) as response:
+                            if response.status == 200:
+                                break
+                            else:
+                                print(f"[ChatApp] Error sending to peer {peer}: Status {response.status} (attempt {attempt+1})")
+                        time.sleep(0.4 * (attempt + 1))
+                    except Exception as e:
+                        if attempt == 2:
+                            print(f"[ChatApp] Could not send message to peer {peer}: {e}")
+                        else:
+                            time.sleep(0.4 * (attempt + 1))
 
     except Exception as e:
         print(f"[ChatApp] Error sending message: {e}")
@@ -235,6 +208,22 @@ def get_messages(headers, body):
         f"{response_body}"
     )
 
+
+@app.route('/get-peers', methods=['GET'])
+def get_peers(headers, body):
+    """
+    Return the list of peers as JSON.
+    """
+    import json
+    response_body = json.dumps(peers)
+    return (
+        f"HTTP/1.1 200 OK\r\n"
+        f"Content-Type: application/json\r\n"
+        f"Content-Length: {len(response_body)}\r\n"
+        f"\r\n"
+        f"{response_body}"
+    )
+
 if __name__ == "__main__":
     # Parse command-line arguments to configure server IP and port
     parser = argparse.ArgumentParser(prog='Backend', description='', epilog='Beckend daemon')
@@ -245,6 +234,7 @@ if __name__ == "__main__":
     ip = args.server_ip
     port = args.server_port
 
-    # Prepare and launch the RESTful application
+    # Store the port and prepare the address
+    app.port = port
     app.prepare_address(ip, port)
     app.run()
